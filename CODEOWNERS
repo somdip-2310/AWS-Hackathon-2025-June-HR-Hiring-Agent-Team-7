@@ -1,0 +1,7 @@
+# CODEOWNERS file content
+/cicd.yml @somdiproy2310
+/pom.xml @somdiproy2310
+/CODEOWNERS @somdiproy2310
+
+# Require code owner review for all files
+* @somdiproy2310

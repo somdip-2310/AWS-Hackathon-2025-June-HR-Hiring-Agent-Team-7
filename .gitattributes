@@ -1,0 +1,4 @@
+src/main/resources/application.properties skip-worktree
+.github/workflows/cicd.yml skip-worktree
+.github/workflows/cicd-prod.yml skip-worktree
+CODEOWNERS skip-worktree
