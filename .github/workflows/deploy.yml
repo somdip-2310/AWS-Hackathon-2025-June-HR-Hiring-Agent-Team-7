@@ -1,5 +1,4 @@
 # .github/workflows/deploy.yml
-# Diagnostic workflow for HR Demo Service
 
 name: Deploy HR Demo to AWS ECS
 
@@ -52,31 +51,6 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Check current service status
-      run: |
-        echo "=== Checking current HR Demo service status ==="
-        aws ecs describe-services \
-          --cluster ${{ env.ECS_CLUSTER }} \
-          --services ${{ env.ECS_SERVICE }} \
-          --query 'services[0].[status, runningCount, desiredCount, pendingCount]' \
-          --output table
-        
-        echo ""
-        echo "=== Recent service events ==="
-        aws ecs describe-services \
-          --cluster ${{ env.ECS_CLUSTER }} \
-          --services ${{ env.ECS_SERVICE }} \
-          --query 'services[0].events[:5].[createdAt, message]' \
-          --output table
-        
-        echo ""
-        echo "=== Load balancer configuration ==="
-        aws ecs describe-services \
-          --cluster ${{ env.ECS_CLUSTER }} \
-          --services ${{ env.ECS_SERVICE }} \
-          --query 'services[0].loadBalancers[*].[targetGroupArn, containerName, containerPort]' \
-          --output table
-
     - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v1
@@ -103,156 +77,192 @@ jobs:
         # Output the image URI
         echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-    - name: Create and deploy task definition
+    - name: Create new task definition
+      id: create-task-def
       run: |
-        echo "=== Creating task definition for HR Demo ==="
-        
-        # Get current task definition
+        # Download current task definition
         aws ecs describe-task-definition \
           --task-definition ${{ env.ECS_TASK_DEFINITION }} \
-          --query taskDefinition > task-definition-temp.json
+          --query taskDefinition > task-definition.json
         
-        # Check container name
-        CURRENT_CONTAINER_NAME=$(cat task-definition-temp.json | jq -r '.containerDefinitions[0].name')
-        echo "Current container name: $CURRENT_CONTAINER_NAME"
-        
-        # Get load balancer expected container name
-        EXPECTED_CONTAINER_NAME=$(aws ecs describe-services \
-          --cluster ${{ env.ECS_CLUSTER }} \
-          --services ${{ env.ECS_SERVICE }} \
-          --query 'services[0].loadBalancers[0].containerName' \
-          --output text 2>/dev/null || echo "none")
-        echo "Load balancer expects container: $EXPECTED_CONTAINER_NAME"
-        
-        # Set the container name to match load balancer expectation
-        if [ "$EXPECTED_CONTAINER_NAME" != "none" ] && [ "$EXPECTED_CONTAINER_NAME" != "null" ]; then
-          CONTAINER_NAME_TO_USE=$EXPECTED_CONTAINER_NAME
-        else
-          CONTAINER_NAME_TO_USE=${{ env.CONTAINER_NAME }}
-        fi
-        echo "Using container name: $CONTAINER_NAME_TO_USE"
-        
-        # Update task definition
-        jq --arg CONTAINER_NAME "$CONTAINER_NAME_TO_USE" \
+        # Update container name and image
+        jq --arg CONTAINER_NAME "${{ env.CONTAINER_NAME }}" \
            --arg IMAGE "${{ steps.build-image.outputs.image }}" \
           '.containerDefinitions[0].name = $CONTAINER_NAME | 
-           .containerDefinitions[0].image = $IMAGE |
+           .containerDefinitions[0].image = $IMAGE | 
            del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
-          task-definition-temp.json > task-definition.json
+          task-definition.json > new-task-definition.json
         
         # Register new task definition
         NEW_TASK_DEF=$(aws ecs register-task-definition \
-          --cli-input-json file://task-definition.json \
+          --cli-input-json file://new-task-definition.json \
           --query 'taskDefinition.taskDefinitionArn' \
           --output text)
         
         echo "New task definition: $NEW_TASK_DEF"
+        echo "task-definition-arn=$NEW_TASK_DEF" >> $GITHUB_OUTPUT
+
+    - name: Stop all old tasks before deployment
+      run: |
+        echo "=== Stopping all old tasks before deployment ==="
         
+        # Get all running tasks
+        RUNNING_TASKS=$(aws ecs list-tasks \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --service-name ${{ env.ECS_SERVICE }} \
+          --desired-status RUNNING \
+          --query 'taskArns[]' \
+          --output text)
+        
+        if [ ! -z "$RUNNING_TASKS" ] && [ "$RUNNING_TASKS" != "None" ]; then
+          for TASK in $RUNNING_TASKS; do
+            echo "Stopping task: $TASK"
+            aws ecs stop-task \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --task $TASK \
+              --reason "Pre-deployment cleanup" || true
+          done
+          
+          # Wait for tasks to stop
+          echo "Waiting for old tasks to stop..."
+          sleep 30
+        fi
+
+    - name: Update ECS service
+      run: |
         # Update service with new task definition
         aws ecs update-service \
           --cluster ${{ env.ECS_CLUSTER }} \
           --service ${{ env.ECS_SERVICE }} \
-          --task-definition $NEW_TASK_DEF \
-          --force-new-deployment
+          --task-definition ${{ steps.create-task-def.outputs.task-definition-arn }} \
+          --force-new-deployment \
+          --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100,deploymentCircuitBreaker={enable=true,rollback=true}" \
+          --health-check-grace-period-seconds 60
 
-    - name: Monitor deployment
+    - name: Wait for service to stabilize
       run: |
-        echo "=== Monitoring deployment progress ==="
+        echo "Waiting for service to stabilize..."
         
-        # Wait up to 10 minutes, checking status every 30 seconds
-        for i in {1..20}; do
-          echo "Check $i/20..."
-          
+        # Wait for the service to become stable
+        SECONDS_WAITED=0
+        MAX_WAIT_SECONDS=600  # 10 minutes
+        
+        while [ $SECONDS_WAITED -lt $MAX_WAIT_SECONDS ]; do
           # Get service status
-          STATUS=$(aws ecs describe-services \
+          SERVICE_STATUS=$(aws ecs describe-services \
             --cluster ${{ env.ECS_CLUSTER }} \
             --services ${{ env.ECS_SERVICE }} \
-            --query 'services[0].deployments[?status==`PRIMARY`].[runningCount, desiredCount]' \
-            --output text)
+            --query 'services[0]' \
+            --output json)
           
-          RUNNING=$(echo $STATUS | cut -d' ' -f1)
-          DESIRED=$(echo $STATUS | cut -d' ' -f2)
+          # Check number of deployments
+          DEPLOYMENT_COUNT=$(echo $SERVICE_STATUS | jq '.deployments | length')
           
-          echo "Running: $RUNNING, Desired: $DESIRED"
-          
-          if [ "$RUNNING" == "$DESIRED" ] && [ "$RUNNING" -gt 0 ]; then
-            echo "✅ Deployment successful!"
-            break
-          fi
-          
-          # Check for failed tasks
-          FAILED_COUNT=$(aws ecs describe-services \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
-            --query 'services[0].deployments[?status==`PRIMARY`].failedTasks' \
-            --output text)
-          
-          if [ "$FAILED_COUNT" -gt 0 ]; then
-            echo "⚠️  Failed tasks detected: $FAILED_COUNT"
-            
-            # Get task failure reason
-            TASK_ARN=$(aws ecs list-tasks \
-              --cluster ${{ env.ECS_CLUSTER }} \
-              --service-name ${{ env.ECS_SERVICE }} \
-              --desired-status STOPPED \
-              --query 'taskArns[0]' \
-              --output text)
-            
-            if [ "$TASK_ARN" != "None" ]; then
-              echo "Failed task details:"
-              aws ecs describe-tasks \
-                --cluster ${{ env.ECS_CLUSTER }} \
-                --tasks $TASK_ARN \
-                --query 'tasks[0].[stoppedReason, stopCode]' \
-                --output table
+          # Check if we have only one PRIMARY deployment
+          if [ $DEPLOYMENT_COUNT -eq 1 ]; then
+            DEPLOYMENT_STATUS=$(echo $SERVICE_STATUS | jq -r '.deployments[0].status')
+            if [ "$DEPLOYMENT_STATUS" = "PRIMARY" ]; then
+              RUNNING_COUNT=$(echo $SERVICE_STATUS | jq -r '.deployments[0].runningCount')
+              DESIRED_COUNT=$(echo $SERVICE_STATUS | jq -r '.deployments[0].desiredCount')
+              
+              if [ "$RUNNING_COUNT" = "$DESIRED_COUNT" ]; then
+                echo "✅ Deployment successful! Running count matches desired count."
+                break
+              fi
             fi
           fi
           
+          echo "Waiting... (${SECONDS_WAITED}s elapsed, ${DEPLOYMENT_COUNT} deployments active)"
           sleep 30
+          SECONDS_WAITED=$((SECONDS_WAITED + 30))
         done
-        
-        # Final status check
-        echo ""
-        echo "=== Final deployment status ==="
-        aws ecs describe-services \
-          --cluster ${{ env.ECS_CLUSTER }} \
-          --services ${{ env.ECS_SERVICE }} \
-          --query 'services[0].deployments[*].[status, desiredCount, runningCount, failedTasks]' \
-          --output table
 
-    - name: Get CloudWatch logs if deployment failed
-      if: failure()
+    - name: Final verification
       run: |
-        echo "=== Checking CloudWatch logs for errors ==="
+        echo "=== Final deployment verification ==="
         
-        # Get the log group name
-        LOG_GROUP="/ecs/somdip-hr-demo"
+        # Get the current running task
+        RUNNING_TASK=$(aws ecs list-tasks \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --service-name ${{ env.ECS_SERVICE }} \
+          --desired-status RUNNING \
+          --query 'taskArns[0]' \
+          --output text)
         
-        # Get recent log events
-        aws logs filter-log-events \
-          --log-group-name $LOG_GROUP \
-          --start-time $(($(date +%s) - 600))000 \
-          --filter-pattern "ERROR" \
-          --max-items 20 \
-          --query 'events[*].[timestamp, message]' \
-          --output table || echo "No error logs found"
+        if [ "$RUNNING_TASK" != "None" ] && [ ! -z "$RUNNING_TASK" ]; then
+          # Get task details
+          TASK_DETAILS=$(aws ecs describe-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks $RUNNING_TASK \
+            --query 'tasks[0]' \
+            --output json)
+          
+          # Extract information
+          TASK_DEF_ARN=$(echo $TASK_DETAILS | jq -r '.taskDefinitionArn')
+          RUNNING_IMAGE=$(echo $TASK_DETAILS | jq -r '.containers[0].image')
+          TASK_STATUS=$(echo $TASK_DETAILS | jq -r '.lastStatus')
+          
+          echo "Task Definition: $TASK_DEF_ARN"
+          echo "Running Image: $RUNNING_IMAGE"
+          echo "Task Status: $TASK_STATUS"
+          
+          # Verify it's using our new task definition
+          if [ "$TASK_DEF_ARN" = "${{ steps.create-task-def.outputs.task-definition-arn }}" ]; then
+            echo "✅ Task is using the new task definition!"
+          else
+            echo "⚠️ WARNING: Task is not using the expected task definition"
+          fi
+          
+          # Verify the image
+          EXPECTED_IMAGE="${{ steps.build-image.outputs.image }}"
+          if [ "$RUNNING_IMAGE" = "$EXPECTED_IMAGE" ]; then
+            echo "✅ Task is running the new image!"
+          else
+            echo "⚠️ WARNING: Task is not running the expected image"
+          fi
+        else
+          echo "❌ ERROR: No running task found!"
+          exit 1
+        fi
+
+    - name: Health check
+      run: |
+        echo "Performing health check..."
+        
+        # Get ALB DNS
+        ALB_DNS="somdip-dev-alb-856223136.us-east-1.elb.amazonaws.com"
+        
+        # Test the HR demo endpoint
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://$ALB_DNS" -H "Host: demos.somdip.dev" || echo "000")
+        
+        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
+          echo "✅ Health check passed! (HTTP $HTTP_CODE)"
+        else
+          echo "⚠️ Health check returned: HTTP $HTTP_CODE"
+        fi
 
     - name: Create deployment summary
       if: always()
       run: |
-        echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "## 🚀 HR Demo Deployment Summary" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
+        
         if [ "${{ job.status }}" == "success" ]; then
-          echo "✅ **Status**: Deployment Successful" >> $GITHUB_STEP_SUMMARY
-          echo "🚀 **URL**: https://demos.somdip.dev" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Deployment Status: **SUCCESS**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 **Live URL**: https://demos.somdip.dev" >> $GITHUB_STEP_SUMMARY
         else
-          echo "❌ **Status**: Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "### ❌ Deployment Status: **FAILED**" >> $GITHUB_STEP_SUMMARY
         fi
+        
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Deployment Details" >> $GITHUB_STEP_SUMMARY
-        echo "- **Service**: ${{ env.ECS_SERVICE }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Cluster**: ${{ env.ECS_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Container**: ${{ env.CONTAINER_NAME }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Image**: \`${{ steps.build-image.outputs.image }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Time**: $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "### 📋 Deployment Details" >> $GITHUB_STEP_SUMMARY
+        echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| **Service** | ${{ env.ECS_SERVICE }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Cluster** | ${{ env.ECS_CLUSTER }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Container** | ${{ env.CONTAINER_NAME }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Image** | \`${{ steps.build-image.outputs.image }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Task Definition** | \`${{ steps.create-task-def.outputs.task-definition-arn }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Commit** | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Time** | $(date -u +"%Y-%m-%d %H:%M:%S UTC") |" >> $GITHUB_STEP_SUMMARY
