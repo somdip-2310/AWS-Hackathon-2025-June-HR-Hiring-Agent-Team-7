@@ -1,4 +1,4 @@
-name: Deploy Portfolio to AWS ECS
+name: Deploy HR Demo to AWS ECS
 
 on:
   push:
@@ -8,11 +8,11 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: somdip-portfolio
-  ECS_SERVICE: somdip-portfolio-service
+  ECR_REPOSITORY: somdip-hr-demo
+  ECS_SERVICE: somdip-hr-demo-service
   ECS_CLUSTER: somdip-dev-cluster
-  ECS_TASK_DEFINITION: somdip-portfolio
-  CONTAINER_NAME: somdip-portfolio
+  ECS_TASK_DEFINITION: somdip-hr-demo
+  CONTAINER_NAME: somdip-hr-demo
 
 jobs:
   deploy:
@@ -90,7 +90,7 @@ jobs:
       if: always()
       run: |
         if [ "${{ job.status }}" == "success" ]; then
-          echo "✅ Portfolio deployment successful!"
+          echo "✅ HR Demo deployment successful!"
         else
-          echo "❌ Portfolio deployment failed!"
+          echo "❌ HR Demo deployment failed!"
         fi
