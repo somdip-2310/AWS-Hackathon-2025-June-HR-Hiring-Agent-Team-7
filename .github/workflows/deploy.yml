@@ -1,5 +1,5 @@
 # .github/workflows/deploy.yml
-# Complete working workflow for HR Demo Service
+# Diagnostic workflow for HR Demo Service
 
 name: Deploy HR Demo to AWS ECS
 
@@ -15,7 +15,7 @@ env:
   ECS_SERVICE: somdip-hr-demo-service
   ECS_CLUSTER: somdip-dev-cluster
   ECS_TASK_DEFINITION: somdip-hr-demo
-  CONTAINER_NAME: hr-demo  # ✅ CORRECT container name confirmed
+  CONTAINER_NAME: hr-demo
 
 jobs:
   deploy:
@@ -52,6 +52,31 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
+    - name: Check current service status
+      run: |
+        echo "=== Checking current HR Demo service status ==="
+        aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
+          --query 'services[0].[status, runningCount, desiredCount, pendingCount]' \
+          --output table
+        
+        echo ""
+        echo "=== Recent service events ==="
+        aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
+          --query 'services[0].events[:5].[createdAt, message]' \
+          --output table
+        
+        echo ""
+        echo "=== Load balancer configuration ==="
+        aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
+          --query 'services[0].loadBalancers[*].[targetGroupArn, containerName, containerPort]' \
+          --output table
+
     - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v1
@@ -78,39 +103,139 @@ jobs:
         # Output the image URI
         echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-    - name: Download current task definition
+    - name: Create and deploy task definition
       run: |
+        echo "=== Creating task definition for HR Demo ==="
+        
+        # Get current task definition
         aws ecs describe-task-definition \
           --task-definition ${{ env.ECS_TASK_DEFINITION }} \
-          --query taskDefinition > task-definition.json
+          --query taskDefinition > task-definition-temp.json
         
-        # Remove fields that cause issues during registration
-        jq 'del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) | del(.registeredAt) | del(.registeredBy)' task-definition.json > temp.json && mv temp.json task-definition.json
+        # Check container name
+        CURRENT_CONTAINER_NAME=$(cat task-definition-temp.json | jq -r '.containerDefinitions[0].name')
+        echo "Current container name: $CURRENT_CONTAINER_NAME"
+        
+        # Get load balancer expected container name
+        EXPECTED_CONTAINER_NAME=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
+          --query 'services[0].loadBalancers[0].containerName' \
+          --output text 2>/dev/null || echo "none")
+        echo "Load balancer expects container: $EXPECTED_CONTAINER_NAME"
+        
+        # Set the container name to match load balancer expectation
+        if [ "$EXPECTED_CONTAINER_NAME" != "none" ] && [ "$EXPECTED_CONTAINER_NAME" != "null" ]; then
+          CONTAINER_NAME_TO_USE=$EXPECTED_CONTAINER_NAME
+        else
+          CONTAINER_NAME_TO_USE=${{ env.CONTAINER_NAME }}
+        fi
+        echo "Using container name: $CONTAINER_NAME_TO_USE"
+        
+        # Update task definition
+        jq --arg CONTAINER_NAME "$CONTAINER_NAME_TO_USE" \
+           --arg IMAGE "${{ steps.build-image.outputs.image }}" \
+          '.containerDefinitions[0].name = $CONTAINER_NAME | 
+           .containerDefinitions[0].image = $IMAGE |
+           del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+          task-definition-temp.json > task-definition.json
+        
+        # Register new task definition
+        NEW_TASK_DEF=$(aws ecs register-task-definition \
+          --cli-input-json file://task-definition.json \
+          --query 'taskDefinition.taskDefinitionArn' \
+          --output text)
+        
+        echo "New task definition: $NEW_TASK_DEF"
+        
+        # Update service with new task definition
+        aws ecs update-service \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --service ${{ env.ECS_SERVICE }} \
+          --task-definition $NEW_TASK_DEF \
+          --force-new-deployment
 
-    - name: Fill in the new image ID in the Amazon ECS task definition
-      id: task-def
-      uses: aws-actions/amazon-ecs-render-task-definition@v1
-      with:
-        task-definition: task-definition.json
-        container-name: ${{ env.CONTAINER_NAME }}
-        image: ${{ steps.build-image.outputs.image }}
-
-    - name: Deploy Amazon ECS task definition
-      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-      with:
-        task-definition: ${{ steps.task-def.outputs.task-definition }}
-        service: ${{ env.ECS_SERVICE }}
-        cluster: ${{ env.ECS_CLUSTER }}
-        wait-for-service-stability: true
-
-    - name: Verify deployment
+    - name: Monitor deployment
       run: |
-        echo "Deployment completed! Verifying service status..."
+        echo "=== Monitoring deployment progress ==="
+        
+        # Wait up to 10 minutes, checking status every 30 seconds
+        for i in {1..20}; do
+          echo "Check $i/20..."
+          
+          # Get service status
+          STATUS=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].deployments[?status==`PRIMARY`].[runningCount, desiredCount]' \
+            --output text)
+          
+          RUNNING=$(echo $STATUS | cut -d' ' -f1)
+          DESIRED=$(echo $STATUS | cut -d' ' -f2)
+          
+          echo "Running: $RUNNING, Desired: $DESIRED"
+          
+          if [ "$RUNNING" == "$DESIRED" ] && [ "$RUNNING" -gt 0 ]; then
+            echo "✅ Deployment successful!"
+            break
+          fi
+          
+          # Check for failed tasks
+          FAILED_COUNT=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].deployments[?status==`PRIMARY`].failedTasks' \
+            --output text)
+          
+          if [ "$FAILED_COUNT" -gt 0 ]; then
+            echo "⚠️  Failed tasks detected: $FAILED_COUNT"
+            
+            # Get task failure reason
+            TASK_ARN=$(aws ecs list-tasks \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --service-name ${{ env.ECS_SERVICE }} \
+              --desired-status STOPPED \
+              --query 'taskArns[0]' \
+              --output text)
+            
+            if [ "$TASK_ARN" != "None" ]; then
+              echo "Failed task details:"
+              aws ecs describe-tasks \
+                --cluster ${{ env.ECS_CLUSTER }} \
+                --tasks $TASK_ARN \
+                --query 'tasks[0].[stoppedReason, stopCode]' \
+                --output table
+            fi
+          fi
+          
+          sleep 30
+        done
+        
+        # Final status check
+        echo ""
+        echo "=== Final deployment status ==="
         aws ecs describe-services \
           --cluster ${{ env.ECS_CLUSTER }} \
           --services ${{ env.ECS_SERVICE }} \
-          --query 'services[0].deployments[0].status' \
-          --output text
+          --query 'services[0].deployments[*].[status, desiredCount, runningCount, failedTasks]' \
+          --output table
+
+    - name: Get CloudWatch logs if deployment failed
+      if: failure()
+      run: |
+        echo "=== Checking CloudWatch logs for errors ==="
+        
+        # Get the log group name
+        LOG_GROUP="/ecs/somdip-hr-demo"
+        
+        # Get recent log events
+        aws logs filter-log-events \
+          --log-group-name $LOG_GROUP \
+          --start-time $(($(date +%s) - 600))000 \
+          --filter-pattern "ERROR" \
+          --max-items 20 \
+          --query 'events[*].[timestamp, message]' \
+          --output table || echo "No error logs found"
 
     - name: Create deployment summary
       if: always()
