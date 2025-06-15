@@ -1,5 +1,4 @@
-# .github/workflows/deploy.yml
-# Place this file in your HR demo repository at .github/workflows/deploy.yml
+# For HR Demo Service
 
 name: Deploy HR Demo to AWS ECS
 
@@ -15,12 +14,42 @@ env:
   ECS_SERVICE: somdip-hr-demo-service
   ECS_CLUSTER: somdip-dev-cluster
   ECS_TASK_DEFINITION: somdip-hr-demo
-  CONTAINER_NAME: somdip-hr-demo
+  # ⚠️ IMPORTANT: Check your HR Demo container name in AWS Console first!
+  # It might be one of these:
+  # - hr-demo-container
+  # - somdip-hr-demo
+  # - container
+  # - app
+  CONTAINER_NAME: somdip-hr-demo  # UPDATE THIS after checking AWS Console
 
 jobs:
+  # First job: Check container name (run this once to verify)
+  check-container-name:
+    name: Check Container Name
+    runs-on: ubuntu-latest
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Get container name from task definition
+      run: |
+        echo "Fetching container name for HR Demo service..."
+        CONTAINER_NAME=$(aws ecs describe-task-definition \
+          --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+          --query 'taskDefinition.containerDefinitions[0].name' \
+          --output text)
+        echo "Container name is: $CONTAINER_NAME"
+        echo "Update the CONTAINER_NAME environment variable in this workflow to: $CONTAINER_NAME"
+
   deploy:
     name: Build and Deploy
     runs-on: ubuntu-latest
+    # Remove this line after you've updated the container name
+    needs: check-container-name
     
     steps:
     - name: Checkout code
@@ -125,6 +154,7 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "- **Service**: ${{ env.ECS_SERVICE }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Cluster**: ${{ env.ECS_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Container**: ${{ env.CONTAINER_NAME }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Image**: ${{ steps.build-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Time**: $(date)" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
