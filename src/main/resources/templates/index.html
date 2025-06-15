@@ -1,4 +1,3 @@
-<!-- src/main/resources/templates/index.html -->
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
@@ -7,361 +6,270 @@
     <title>HR Hiring Agent - AI-Powered Resume Screening</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link th:href="@{/css/main.css}" rel="stylesheet" type="text/css">
 </head>
-<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
-<div class="container mx-auto px-4 py-8 max-w-6xl">
+<body class="bg-gray-50 min-h-screen">
     <!-- Header -->
-    <div class="text-center mb-10">
-        <h1 class="text-4xl font-bold text-gray-800 mb-4">
-            <i class="fas fa-robot text-blue-600"></i>
-            HR Hiring Agent
-        </h1>
-        <p class="text-xl text-gray-600">AI-Powered Resume Screening & Job Matching</p>
-    </div>
-
-    <!-- Statistics Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div class="bg-white rounded-lg shadow-lg p-6 text-center">
-            <div class="text-3xl font-bold text-blue-600" id="candidateCount">0</div>
-            <div class="text-gray-600">Candidates Processed</div>
-        </div>
-        <div class="bg-white rounded-lg shadow-lg p-6 text-center">
-            <div class="text-3xl font-bold text-green-600" id="jobCount">2</div>
-            <div class="text-gray-600">Active Jobs</div>
-        </div>
-        <div class="bg-white rounded-lg shadow-lg p-6 text-center">
-            <div class="text-3xl font-bold text-purple-600" id="matchCount">0</div>
-            <div class="text-gray-600">Matches Found</div>
+    <div class="gradient-bg text-white py-8">
+        <div class="container mx-auto px-4 text-center">
+            <h1 class="text-4xl font-bold mb-3 flex items-center justify-center">
+                <i class="fas fa-robot mr-4"></i>
+                HR Hiring Agent
+            </h1>
+            <p class="text-lg opacity-90">AI-Powered Resume Screening & Job Matching Made Simple</p>
         </div>
     </div>
 
-    <!-- Upload Section -->
-    <div class="bg-white rounded-lg shadow-lg p-8 mb-8">
-        <h2 class="text-2xl font-semibold mb-6 text-gray-800">
-            <i class="fas fa-cloud-upload-alt text-blue-600 mr-2"></i>
-            Upload Resumes
-        </h2>
-
-        <div class="border-2 border-dashed border-blue-300 rounded-lg p-8 text-center">
-            <div class="mb-4">
-                <i class="fas fa-file-upload text-6xl text-blue-300"></i>
+    <!-- Statistics Bar - Sticky -->
+    <div class="sticky-header">
+        <div class="container mx-auto px-4 py-4">
+            <div class="grid grid-cols-3 gap-4">
+                <div class="bg-white rounded-lg shadow p-4 text-center">
+                    <div class="flex items-center justify-center">
+                        <i class="fas fa-users text-blue-500 text-2xl mr-2"></i>
+                        <div>
+                            <div class="text-2xl font-bold text-gray-800" id="candidateCount">0</div>
+                            <div class="text-sm text-gray-600">Candidates</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-4 text-center">
+                    <div class="flex items-center justify-center">
+                        <i class="fas fa-briefcase text-green-500 text-2xl mr-2"></i>
+                        <div>
+                            <div class="text-2xl font-bold text-gray-800" id="jobCount">5</div>
+                            <div class="text-sm text-gray-600">Positions</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-4 text-center">
+                    <div class="flex items-center justify-center">
+                        <i class="fas fa-check-circle text-purple-500 text-2xl mr-2"></i>
+                        <div>
+                            <div class="text-2xl font-bold text-gray-800" id="matchCount">0</div>
+                            <div class="text-sm text-gray-600">Matches</div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <input type="file" id="resumeFiles" multiple accept=".pdf,.doc,.docx"
-                   class="hidden" onchange="handleFileSelect()">
-            <button onclick="document.getElementById('resumeFiles').click()"
-                    class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300">
-                Choose Resume Files
-            </button>
-            <p class="text-gray-500 mt-4">Support PDF, DOC, DOCX files (Max 10MB each)</p>
         </div>
-
-        <div id="uploadProgress" class="mt-6 hidden">
-            <div class="bg-gray-200 rounded-full h-3">
-                <div id="progressBar" class="bg-blue-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
-            </div>
-            <p id="progressText" class="text-center mt-2 text-gray-600">Processing...</p>
-        </div>
-
-        <div id="uploadResults" class="mt-6"></div>
     </div>
 
-    <!-- Job Matching Section -->
-    <div class="bg-white rounded-lg shadow-lg p-8 mb-8">
-        <h2 class="text-2xl font-semibold mb-6 text-gray-800">
-            <i class="fas fa-search text-green-600 mr-2"></i>
-            Find Best Matches
-        </h2>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Select Job Position</label>
-                <select id="jobSelect" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                    <option value="">Choose a job position...</option>
-                </select>
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- How It Works -->
+        <div class="bg-blue-50 rounded-xl p-6 mb-8">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">
+                <i class="fas fa-info-circle text-blue-600 mr-2"></i>
+                How It Works
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="flex items-start">
+                    <div class="step-number">1</div>
+                    <div>
+                        <h3 class="font-semibold">Upload Resumes</h3>
+                        <p class="text-sm text-gray-600">Select multiple PDF, DOC, or DOCX files</p>
+                    </div>
+                </div>
+                <div class="flex items-start">
+                    <div class="step-number">2</div>
+                    <div>
+                        <h3 class="font-semibold">Select Position</h3>
+                        <p class="text-sm text-gray-600">Choose from available job openings</p>
+                    </div>
+                </div>
+                <div class="flex items-start">
+                    <div class="step-number">3</div>
+                    <div>
+                        <h3 class="font-semibold">Find Matches</h3>
+                        <p class="text-sm text-gray-600">AI analyzes and ranks candidates</p>
+                    </div>
+                </div>
             </div>
-            <div class="flex items-end">
-                <button onclick="findMatches()"
-                        class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300">
-                    <i class="fas fa-magic mr-2"></i>
-                    Find Best Matches
+        </div>
+
+        <!-- Step 1: Upload Section -->
+        <div class="bg-white rounded-xl shadow-lg p-8 mb-8 card-hover">
+            <div class="flex items-center mb-6">
+                <div class="step-number" id="step1">1</div>
+                <h2 class="text-2xl font-semibold text-gray-800">Upload Resume Files</h2>
+            </div>
+            
+            <div class="bg-purple-50 border-2 border-dashed border-purple-300 rounded-xl p-10 text-center hover:bg-purple-100 transition-colors cursor-pointer"
+                 onclick="document.getElementById('resumeFiles').click()">
+                <div class="mb-4">
+                    <i class="fas fa-cloud-upload-alt text-6xl text-purple-400"></i>
+                </div>
+                <input type="file" id="resumeFiles" multiple accept=".pdf,.doc,.docx"
+                       class="hidden" onchange="handleFileSelect()">
+                <h3 class="text-lg font-semibold text-gray-800 mb-2">Click to Upload or Drag & Drop</h3>
+                <button class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300">
+                    <i class="fas fa-folder-open mr-2"></i>
+                    Browse Files
+                </button>
+                <p class="text-sm text-gray-500 mt-3">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    PDF, DOC, DOCX (Max 10MB each) • Multiple files supported
+                </p>
+            </div>
+
+            <!-- Sample Resume Download Section -->
+            <div class="mt-6 bg-blue-50 rounded-lg p-6 border border-blue-200">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h4 class="font-semibold text-gray-800 mb-2">
+                            <i class="fas fa-question-circle text-blue-600 mr-2"></i>
+                            Don't have resumes to test?
+                        </h4>
+                        <p class="text-sm text-gray-600">
+                            Download our sample resume pack with 10 different candidate profiles
+                        </p>
+                    </div>
+                    <button onclick="downloadSampleResumes()" 
+                            class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 flex items-center">
+                        <i class="fas fa-download mr-2"></i>
+                        Download Test Data
+                    </button>
+                </div>
+            </div>
+
+            <!-- Upload Progress Section -->
+            <div id="uploadProgressSection" class="mt-6 hidden">
+                <h3 class="text-lg font-semibold mb-4 text-gray-800">
+                    <i class="fas fa-cog fa-spin mr-2 text-purple-600"></i>
+                    Processing Resumes...
+                </h3>
+                <div id="fileProgressList" class="space-y-3">
+                    <!-- Individual file progress will be added here -->
+                </div>
+            </div>
+
+            <div id="uploadResults" class="mt-6"></div>
+        </div>
+
+        <!-- Step 2 & 3: Job Selection and Matching -->
+        <div class="bg-white rounded-xl shadow-lg p-8 mb-8 card-hover">
+            <div class="flex items-center mb-6">
+                <div class="step-number" id="step2">2</div>
+                <h2 class="text-2xl font-semibold text-gray-800">Select Position & Find Matches</h2>
+            </div>
+
+            <!-- Available Positions Display -->
+            <div class="bg-gray-50 p-6 rounded-lg mb-6">
+                <h3 class="font-semibold text-gray-800 mb-4">
+                    <i class="fas fa-list mr-2 text-blue-600"></i>
+                    Available Positions:
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div class="bg-white p-3 rounded-lg shadow-sm">
+                        <i class="fas fa-chart-line mr-2 text-purple-500"></i>
+                        <span class="font-medium">Sales Demand Planning</span>
+                        <span class="text-xs text-gray-500 block">Senior Level</span>
+                    </div>
+                    <div class="bg-white p-3 rounded-lg shadow-sm">
+                        <i class="fas fa-code mr-2 text-blue-500"></i>
+                        <span class="font-medium">Angular Developer</span>
+                        <span class="text-xs text-gray-500 block">Mid Level</span>
+                    </div>
+                    <div class="bg-white p-3 rounded-lg shadow-sm">
+                        <i class="fas fa-coffee mr-2 text-green-500"></i>
+                        <span class="font-medium">Java Developer</span>
+                        <span class="text-xs text-gray-500 block">Mid Level</span>
+                    </div>
+                    <div class="bg-white p-3 rounded-lg shadow-sm">
+                        <i class="fas fa-server mr-2 text-orange-500"></i>
+                        <span class="font-medium">DevOps Engineer</span>
+                        <span class="text-xs text-gray-500 block">Senior Level</span>
+                    </div>
+                    <div class="bg-white p-3 rounded-lg shadow-sm">
+                        <i class="fas fa-brain mr-2 text-pink-500"></i>
+                        <span class="font-medium">Data Scientist</span>
+                        <span class="text-xs text-gray-500 block">Mid Level</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                        <i class="fas fa-hand-pointer mr-2 text-purple-600"></i>
+                        Select a Position
+                    </label>
+                    <select id="jobSelect" class="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500">
+                        <option value="">Choose a job position...</option>
+                    </select>
+                </div>
+                <div class="flex items-end">
+                    <button onclick="findMatches()" id="findMatchesBtn" disabled
+                            class="w-full bg-gray-400 text-white font-bold py-3 px-6 rounded-lg transition duration-300 disabled:cursor-not-allowed">
+                        <i class="fas fa-magic mr-2"></i>
+                        Find Best Matches
+                    </button>
+                </div>
+            </div>
+
+            <!-- Matching Process Loader -->
+            <div id="matchingLoader" class="hidden mt-6 text-center">
+                <div class="bg-gray-50 rounded-lg p-6">
+                    <div class="inline-flex items-center justify-center mb-4">
+                        <div class="loader mr-4"></div>
+                        <div class="text-left">
+                            <p class="text-lg font-semibold text-gray-800">AI is analyzing candidates...</p>
+                            <p class="text-gray-600" id="matchingStatus">Evaluating skills and experience</p>
+                        </div>
+                    </div>
+                    <div class="max-w-md mx-auto">
+                        <div class="bg-gray-200 rounded-full h-2">
+                            <div id="matchingProgress" class="bg-gradient-to-r from-purple-500 to-purple-700 h-2 rounded-full transition-all duration-1000" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="matchResults" class="bg-white rounded-xl shadow-lg p-8 mb-8 hidden card-hover">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-semibold text-gray-800">
+                    <i class="fas fa-trophy text-yellow-500 mr-2"></i>
+                    Top Candidate Matches
+                </h2>
+                <div>
+                    <button onclick="downloadResults()" class="bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded-lg text-gray-700 mr-2">
+                        <i class="fas fa-download mr-2"></i>
+                        Export
+                    </button>
+                    <button onclick="clearResults()" class="bg-red-100 hover:bg-red-200 px-4 py-2 rounded-lg text-red-700">
+                        <i class="fas fa-times mr-2"></i>
+                        Clear
+                    </button>
+                </div>
+            </div>
+            <div id="matchList"></div>
+        </div>
+
+        <!-- Candidates List -->
+        <div class="bg-white rounded-xl shadow-lg p-8 card-hover">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-semibold text-gray-800">
+                    <i class="fas fa-database text-purple-600 mr-2"></i>
+                    All Processed Candidates
+                </h2>
+                <button onclick="clearAllCandidates()" class="bg-red-100 hover:bg-red-200 px-4 py-2 rounded-lg text-red-700 text-sm">
+                    <i class="fas fa-trash mr-1"></i>
+                    Clear All
                 </button>
             </div>
+            <div id="candidatesList" class="space-y-4">
+                <div class="text-center py-12">
+                    <i class="fas fa-inbox text-6xl text-gray-300 mb-4"></i>
+                    <p class="text-gray-500">No candidates uploaded yet</p>
+                    <p class="text-gray-400 text-sm">Upload resume files to see extracted skills here</p>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Results Section -->
-    <div id="matchResults" class="bg-white rounded-lg shadow-lg p-8 hidden">
-        <h2 class="text-2xl font-semibold mb-6 text-gray-800">
-            <i class="fas fa-trophy text-yellow-600 mr-2"></i>
-            Top Candidate Matches
-        </h2>
-        <div id="matchList"></div>
-    </div>
-
-    <!-- Candidates List -->
-    <div class="bg-white rounded-lg shadow-lg p-8">
-        <h2 class="text-2xl font-semibold mb-6 text-gray-800">
-            <i class="fas fa-users text-purple-600 mr-2"></i>
-            All Candidates
-        </h2>
-        <div id="candidatesList" class="space-y-4">
-            <p class="text-gray-500 text-center py-8">No candidates uploaded yet. Upload some resumes to get started!</p>
-        </div>
-    </div>
-</div>
-
-<script>
-    // Global variables
-    let uploadedFiles = [];
-    let candidates = [];
-    let jobs = [];
-
-    // Initialize page
-    document.addEventListener('DOMContentLoaded', function() {
-        loadJobs();
-        loadCandidates();
-    });
-
-    // Load available jobs
-    async function loadJobs() {
-        try {
-            const response = await fetch('/api/jobs');
-            jobs = await response.json();
-
-            const jobSelect = document.getElementById('jobSelect');
-            jobSelect.innerHTML = '<option value="">Choose a job position...</option>';
-
-            jobs.forEach(job => {
-                const option = document.createElement('option');
-                option.value = job.id;
-                option.textContent = `${job.title} (${job.experienceLevel})`;
-                jobSelect.appendChild(option);
-            });
-
-            document.getElementById('jobCount').textContent = jobs.length;
-        } catch (error) {
-            console.error('Error loading jobs:', error);
-        }
-    }
-
-    // Load existing candidates
-    async function loadCandidates() {
-        try {
-            const response = await fetch('/api/candidates');
-            candidates = await response.json();
-
-            updateCandidateCount();
-            displayCandidates();
-        } catch (error) {
-            console.error('Error loading candidates:', error);
-        }
-    }
-
-    // Handle file selection
-    function handleFileSelect() {
-        const files = document.getElementById('resumeFiles').files;
-        if (files.length > 0) {
-            uploadFiles(Array.from(files));
-        }
-    }
-
-    // Upload files
-    async function uploadFiles(files) {
-        const progressDiv = document.getElementById('uploadProgress');
-        const progressBar = document.getElementById('progressBar');
-        const progressText = document.getElementById('progressText');
-        const resultsDiv = document.getElementById('uploadResults');
-
-        progressDiv.classList.remove('hidden');
-        resultsDiv.innerHTML = '';
-
-        let successCount = 0;
-        let totalFiles = files.length;
-
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            const formData = new FormData();
-            formData.append('file', file);
-
-            try {
-                progressText.textContent = `Processing ${file.name}...`;
-                progressBar.style.width = `${((i + 0.5) / totalFiles) * 100}%`;
-
-                const response = await fetch('/api/upload', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    successCount++;
-                    addResultMessage(file.name, 'success', 'Processed successfully');
-                } else {
-                    addResultMessage(file.name, 'error', result.error);
-                }
-
-            } catch (error) {
-                addResultMessage(file.name, 'error', 'Upload failed: ' + error.message);
-            }
-
-            progressBar.style.width = `${((i + 1) / totalFiles) * 100}%`;
-        }
-
-        progressText.textContent = `Completed! ${successCount}/${totalFiles} files processed successfully.`;
-
-        // Refresh data
-        setTimeout(() => {
-            loadCandidates();
-            progressDiv.classList.add('hidden');
-        }, 2000);
-    }
-
-    // Add result message
-    function addResultMessage(fileName, type, message) {
-        const resultsDiv = document.getElementById('uploadResults');
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `p-3 rounded-lg mb-2 ${type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`;
-        messageDiv.innerHTML = `
-            <i class="fas ${type === 'success' ? 'fa-check' : 'fa-times'} mr-2"></i>
-            <strong>${fileName}:</strong> ${message}
-        `;
-        resultsDiv.appendChild(messageDiv);
-    }
-
-    // Find matches
-    async function findMatches() {
-        const jobId = document.getElementById('jobSelect').value;
-        if (!jobId) {
-            alert('Please select a job position first.');
-            return;
-        }
-
-        if (candidates.length === 0) {
-            alert('Please upload some resumes first.');
-            return;
-        }
-
-        try {
-            const response = await fetch('/api/match', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: `jobId=${jobId}`
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                displayMatches(result.matches);
-                document.getElementById('matchCount').textContent = result.matches.length;
-            } else {
-                alert('Error finding matches: ' + result.error);
-            }
-
-        } catch (error) {
-            console.error('Error finding matches:', error);
-            alert('Failed to find matches. Please try again.');
-        }
-    }
-
-    // Display matches
-    function displayMatches(matches) {
-        const resultsDiv = document.getElementById('matchResults');
-        const matchList = document.getElementById('matchList');
-
-        if (matches.length === 0) {
-            matchList.innerHTML = '<p class="text-gray-500 text-center py-8">No matches found.</p>';
-            resultsDiv.classList.remove('hidden');
-            return;
-        }
-
-        matchList.innerHTML = '';
-
-        matches.forEach((match, index) => {
-            const matchDiv = document.createElement('div');
-            const scoreColor = match.score >= 80 ? 'text-green-600' :
-                             match.score >= 60 ? 'text-yellow-600' : 'text-red-600';
-
-            matchDiv.className = 'border-l-4 border-blue-500 bg-gray-50 p-4 mb-4 rounded-r-lg';
-            matchDiv.innerHTML = `
-                <div class="flex justify-between items-center">
-                    <div>
-                        <h3 class="text-lg font-semibold text-gray-800">
-                            ${index + 1}. ${match.candidateName}
-                        </h3>
-                        <p class="text-gray-600">Candidate ID: ${match.candidateId}</p>
-                    </div>
-                    <div class="text-right">
-                        <div class="text-3xl font-bold ${scoreColor}">
-                            ${Math.round(match.score)}%
-                        </div>
-                        <div class="text-sm text-gray-500">Match Score</div>
-                    </div>
-                </div>
-            `;
-
-            matchList.appendChild(matchDiv);
-        });
-
-        resultsDiv.classList.remove('hidden');
-    }
-
-    // Display candidates
-    function displayCandidates() {
-        const candidatesList = document.getElementById('candidatesList');
-
-        if (candidates.length === 0) {
-            candidatesList.innerHTML = '<p class="text-gray-500 text-center py-8">No candidates uploaded yet. Upload some resumes to get started!</p>';
-            return;
-        }
-
-        candidatesList.innerHTML = '';
-
-        candidates.forEach(candidate => {
-            const candidateDiv = document.createElement('div');
-            candidateDiv.className = 'border rounded-lg p-4 hover:shadow-md transition duration-300';
-            candidateDiv.innerHTML = `
-                <div class="flex justify-between items-start">
-                    <div class="flex-1">
-                        <h3 class="text-lg font-semibold text-gray-800 mb-2">
-                            <i class="fas fa-user mr-2 text-blue-600"></i>
-                            ${candidate.fileName}
-                        </h3>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <strong class="text-gray-700">Technical Skills:</strong>
-                                <div class="flex flex-wrap gap-1 mt-1">
-                                    ${candidate.technicalSkills ? candidate.technicalSkills.map(skill =>
-                                        `<span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">${skill}</span>`
-                                    ).join('') : '<span class="text-gray-500">Not analyzed</span>'}
-                                </div>
-                            </div>
-                            <div>
-                                <strong class="text-gray-700">Experience Level:</strong>
-                                <span class="ml-2 px-3 py-1 rounded-full text-xs font-medium ${
-                                    candidate.experienceLevel === 'SENIOR' ? 'bg-purple-100 text-purple-800' :
-                                    candidate.experienceLevel === 'MID' ? 'bg-green-100 text-green-800' :
-                                    'bg-yellow-100 text-yellow-800'
-                                }">${candidate.experienceLevel || 'Unknown'}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="text-right text-sm text-gray-500">
-                        ${new Date(candidate.processedAt).toLocaleDateString()}
-                    </div>
-                </div>
-            `;
-
-            candidatesList.appendChild(candidateDiv);
-        });
-    }
-
-    // Update candidate count
-    function updateCandidateCount() {
-        document.getElementById('candidateCount').textContent = candidates.length;
-    }
-</script>
+    <!-- ONLY load main.js -->
+    <script th:src="@{/js/main.js}"></script>
 </body>
 </html>
