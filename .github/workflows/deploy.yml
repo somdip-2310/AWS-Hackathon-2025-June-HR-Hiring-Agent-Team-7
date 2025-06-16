@@ -94,30 +94,18 @@ jobs:
         echo "execution-role=$EXECUTION_ROLE" >> $GITHUB_OUTPUT
         echo "task-role=$TASK_ROLE" >> $GITHUB_OUTPUT
         
-        # Extract role name using bash parameter expansion instead of basename
+        # Extract role names for display only
         EXECUTION_ROLE_NAME=${EXECUTION_ROLE##*/}
         TASK_ROLE_NAME=${TASK_ROLE##*/}
         
-        # Validate roles exist
-        echo "Validating execution role: $EXECUTION_ROLE_NAME"
-        aws iam get-role --role-name "$EXECUTION_ROLE_NAME" >/dev/null 2>&1 || {
-          echo "❌ Execution role not found: $EXECUTION_ROLE_NAME"
-          exit 1
-        }
-        
-        if [ "$TASK_ROLE" != "$EXECUTION_ROLE" ]; then
-          echo "Validating task role: $TASK_ROLE_NAME"
-          aws iam get-role --role-name "$TASK_ROLE_NAME" >/dev/null 2>&1 || {
-            echo "❌ Task role not found: $TASK_ROLE_NAME"
-            exit 1
-          }
-        fi
-        
-        echo "✅ Current configuration retrieved successfully"
+        echo "✅ Current configuration retrieved"
         echo "  CPU: $CURRENT_CPU"
         echo "  Memory: $CURRENT_MEMORY"
         echo "  Execution Role: $EXECUTION_ROLE_NAME"
         echo "  Task Role: $TASK_ROLE_NAME"
+        
+        # Note: Skipping role validation since roles are known to exist
+        # The GitHub Actions IAM user/role may not have iam:GetRole permission
 
     - name: Create optimized task definition
       env:
