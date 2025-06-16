@@ -134,12 +134,12 @@ jobs:
               ],
               "environment": [
                 {"name": "AWS_REGION", "value": "$AWS_REGION"},
-                {"name": "AWS_S3_BUCKET_NAME", "value": "hr-hiring-resumes-js"},
-                {"name": "AWS_BEDROCK_MODEL_ID", "value": "us.amazon.nova-premier-v1:0"},
+                {"name": "S3_BUCKET_NAME", "value": "hr-hiring-resumes-js"},
+                {"name": "BEDROCK_MODEL_ID", "value": "us.amazon.nova-premier-v1:0"},
                 {"name": "SPRING_PROFILES_ACTIVE", "value": "prod"},
                 {"name": "SERVER_PORT", "value": "8081"},
-                {"name": "JAVA_OPTS", "value": "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"},
-                {"name": "SECURITY_HEADERS_CONTENT_SECURITY_POLICY", "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'"}
+                {"name": "CORS_ALLOWED_ORIGINS", "value": "https://demos.somdip.dev,https://somdip.dev,http://localhost:3000"},
+                {"name": "JAVA_OPTS", "value": "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"}
               ],
               "logConfiguration": {
                 "logDriver": "awslogs",
