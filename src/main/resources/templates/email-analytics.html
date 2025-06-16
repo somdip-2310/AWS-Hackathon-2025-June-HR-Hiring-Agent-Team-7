@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HR Demo - Email Analytics | Somdip Roy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center space-x-4">
+                    <a href="/" class="inline-flex items-center px-4 py-2 rounded-lg bg-purple-600 text-white font-medium text-sm shadow-lg hover:bg-purple-700">
+                        <i class="fas fa-arrow-left mr-2"></i>
+                        Back to Demo
+                    </a>
+                    <h1 class="text-xl font-bold text-gray-800">HR Demo Analytics</h1>
+                </div>
+                <div class="text-sm text-gray-500" id="lastUpdated"></div>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Statistics Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-users text-blue-600 text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Total Users</p>
+                        <p class="text-2xl font-bold text-gray-900" id="totalUsers">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-play text-green-600 text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Total Sessions</p>
+                        <p class="text-2xl font-bold text-gray-900" id="totalSessions">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-clock text-yellow-600 text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Recent Users (24h)</p>
+                        <p class="text-2xl font-bold text-gray-900" id="recentUsers">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-sync text-purple-600 text-xl"></i>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Returning Users</p>
+                        <p class="text-2xl font-bold text-gray-900" id="returningUsers">-</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Email Records Table -->
+            <div class="bg-white rounded-lg shadow">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-lg font-semibold text-gray-800">
+                            <i class="fas fa-envelope mr-2 text-blue-600"></i>
+                            Email Records
+                        </h2>
+                        <button onclick="refreshData()" class="text-blue-600 hover:text-blue-700">
+                            <i class="fas fa-refresh"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <div class="overflow-hidden">
+                        <table class="min-w-full">
+                            <thead>
+                                <tr class="border-b border-gray-200">
+                                    <th class="text-left py-3 px-4 font-semibold text-gray-700">Email</th>
+                                    <th class="text-left py-3 px-4 font-semibold text-gray-700">Usage Count</th>
+                                    <th class="text-left py-3 px-4 font-semibold text-gray-700">Last Used</th>
+                                </tr>
+                            </thead>
+                            <tbody id="emailRecordsTable">
+                                <tr>
+                                    <td colspan="3" class="text-center py-8 text-gray-500">
+                                        <i class="fas fa-spinner fa-spin mr-2"></i>
+                                        Loading email records...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Top Users -->
+            <div class="bg-white rounded-lg shadow">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h2 class="text-lg font-semibold text-gray-800">
+                        <i class="fas fa-trophy mr-2 text-yellow-600"></i>
+                        Most Active Users
+                    </h2>
+                </div>
+                <div class="p-6">
+                    <div id="topUsersList">
+                        <div class="text-center py-8 text-gray-500">
+                            <i class="fas fa-spinner fa-spin mr-2"></i>
+                            Loading top users...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Export Options -->
+        <div class="mt-8 bg-white rounded-lg shadow p-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                <i class="fas fa-download mr-2 text-green-600"></i>
+                Export Data
+            </h3>
+            <div class="flex space-x-4">
+                <button onclick="exportEmailData('csv')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+                    <i class="fas fa-file-csv mr-2"></i>
+                    Export CSV
+                </button>
+                <button onclick="exportEmailData('json')" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">
+                    <i class="fas fa-file-code mr-2"></i>
+                    Export JSON
+                </button>
+                <button onclick="printReport()" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg">
+                    <i class="fas fa-print mr-2"></i>
+                    Print Report
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let emailData = null;
+        let statisticsData = null;
+
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadEmailData();
+            
+            // Auto-refresh every 30 seconds
+            setInterval(loadEmailData, 30000);
+        });
+
+        async function loadEmailData() {
+            try {
+                const response = await fetch('/api/admin/emails');
+                const data = await response.json();
+                
+                if (data.success) {
+                    emailData = data.emailRecords;
+                    statisticsData = data.statistics;
+                    
+                    updateStatistics();
+                    updateEmailTable();
+                    updateTopUsers();
+                    updateLastUpdated();
+                } else {
+                    showError('Failed to load email data');
+                }
+            } catch (error) {
+                console.error('Error loading email data:', error);
+                showError('Failed to connect to server');
+            }
+        }
+
+        function updateStatistics() {
+            if (!statisticsData) return;
+            
+            document.getElementById('totalUsers').textContent = statisticsData.totalUniqueEmails || 0;
+            document.getElementById('totalSessions').textContent = statisticsData.totalSessions || 0;
+            document.getElementById('recentUsers').textContent = statisticsData.recentUsers24h || 0;
+            
+            // Calculate returning users (users with more than 1 session)
+            const returningUsers = emailData ? emailData.filter(record => record.usageCount > 1).length : 0;
+            document.getElementById('returningUsers').textContent = returningUsers;
+        }
+
+        function updateEmailTable() {
+            const tableBody = document.getElementById('emailRecordsTable');
+            
+            if (!emailData || emailData.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="3" class="text-center py-8 text-gray-500">
+                            No email records found
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tableBody.innerHTML = emailData.map(record => `
+                <tr class="border-b border-gray-100 hover:bg-gray-50">
+                    <td class="py-3 px-4">
+                        <div class="flex items-center">
+                            <i class="fas fa-envelope text-gray-400 mr-2"></i>
+                            <span class="font-medium">${record.email}</span>
+                        </div>
+                    </td>
+                    <td class="py-3 px-4">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            record.usageCount > 1 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        }">
+                            ${record.usageCount} ${record.usageCount === 1 ? 'session' : 'sessions'}
+                        </span>
+                    </td>
+                    <td class="py-3 px-4 text-sm text-gray-600">
+                        ${formatDate(record.lastUsed)}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function updateTopUsers() {
+            const topUsersList = document.getElementById('topUsersList');
+            
+            if (!statisticsData || !statisticsData.topUsers || statisticsData.topUsers.length === 0) {
+                topUsersList.innerHTML = `
+                    <div class="text-center py-8 text-gray-500">
+                        No returning users yet
+                    </div>
+                `;
+                return;
+            }
+            
+            topUsersList.innerHTML = statisticsData.topUsers.map((user, index) => `
+                <div class="flex items-center justify-between py-3 ${index === 0 ? '' : 'border-t border-gray-100'}">
+                    <div class="flex items-center">
+                        <div class="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center mr-3">
+                            <span class="text-yellow-600 font-bold text-sm">${index + 1}</span>
+                        </div>
+                        <div>
+                            <p class="font-medium text-gray-800">${user.email}</p>
+                            <p class="text-sm text-gray-500">${user.usageCount} sessions</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center">
+                        ${index === 0 ? '<i class="fas fa-crown text-yellow-500"></i>' : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateLastUpdated() {
+            const now = new Date();
+            document.getElementById('lastUpdated').textContent = 
+                `Last updated: ${now.toLocaleTimeString()}`;
+        }
+
+        function refreshData() {
+            loadEmailData();
+        }
+
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+            
+            if (diffMins < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins}m ago`;
+            if (diffHours < 24) return `${diffHours}h ago`;
+            if (diffDays < 7) return `${diffDays}d ago`;
+            
+            return date.toLocaleDateString();
+        }
+
+        function exportEmailData(format) {
+            if (!emailData) {
+                alert('No data to export');
+                return;
+            }
+            
+            const timestamp = new Date().toISOString().split('T')[0];
+            
+            if (format === 'csv') {
+                const csv = convertToCSV(emailData);
+                downloadFile(csv, `hr-demo-emails-${timestamp}.csv`, 'text/csv');
+            } else if (format === 'json') {
+                const json = JSON.stringify({
+                    exportDate: new Date().toISOString(),
+                    statistics: statisticsData,
+                    emailRecords: emailData
+                }, null, 2);
+                downloadFile(json, `hr-demo-emails-${timestamp}.json`, 'application/json');
+            }
+        }
+
+        function convertToCSV(data) {
+            const headers = ['Email', 'Usage Count', 'First Used', 'Last Used', 'Last Session ID'];
+            const csvContent = [
+                headers.join(','),
+                ...data.map(record => [
+                    `"${record.email}"`,
+                    record.usageCount,
+                    `"${record.firstUsed}"`,
+                    `"${record.lastUsed}"`,
+                    `"${record.lastSessionId}"`
+                ].join(','))
+            ].join('\n');
+            
+            return csvContent;
+        }
+
+        function downloadFile(content, filename, contentType) {
+            const blob = new Blob([content], { type: contentType });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        }
+
+        function printReport() {
+            window.print();
+        }
+
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+            errorDiv.innerHTML = `
+                <div class="flex items-center">
+                    <i class="fas fa-exclamation-triangle mr-2"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+            document.body.appendChild(errorDiv);
+            
+            setTimeout(() => {
+                if (errorDiv.parentNode) {
+                    errorDiv.parentNode.removeChild(errorDiv);
+                }
+            }, 5000);
+        }
+    </script>
+
+    <style>
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            
+            body {
+                background: white !important;
+            }
+            
+            .shadow {
+                box-shadow: none !important;
+            }
+        }
+    </style>
+</body>
+</html>

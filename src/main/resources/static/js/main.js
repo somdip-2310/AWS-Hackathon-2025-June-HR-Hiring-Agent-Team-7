@@ -1,5 +1,4 @@
 // UNIFIED main.js - Complete HR Agent JavaScript
-// Replace ALL your separate JS files with this single file
 
 // ========================================
 // GLOBAL VARIABLES
@@ -7,12 +6,25 @@
 let currentJobs = [];
 let currentCandidates = [];
 let uploadedInSession = false;
+let currentSessionId = null;
+let sessionTimer = null;
+let sessionTimerInterval = null;
+let cleanupCheckInterval = null;
+let userEmail = null;
+let userQueueId = null;
+let queueCheckInterval = null;
 
 // ========================================
 // INITIALIZATION
 // ========================================
 document.addEventListener('DOMContentLoaded', function() {
     console.log('HR Agent initializing...');
+    
+    // Initialize session management first
+    SessionManager.init();
+    
+    // Always enable reading sections first
+    SessionManager.enableReadingSections();
     
     // Initialize all components
     loadJobs();
@@ -230,6 +242,14 @@ function displayCandidates() {
 // UPLOAD HANDLING - FIXED
 // ========================================
 function handleFileSelect() {
+    if (!currentSessionId) {
+        alert('Please start a session first');
+        SessionManager.showModal();
+        // Clear the file input
+        document.getElementById('resumeFiles').value = '';
+        return;
+    }
+    
     const files = document.getElementById('resumeFiles').files;
     if (files.length > 0) {
         console.log('Files selected:', files.length);
@@ -285,6 +305,10 @@ async function uploadFiles(files) {
         const formData = new FormData();
         formData.append('file', file);
         
+        if (currentSessionId) {
+            formData.append('sessionId', currentSessionId);
+        }
+        
         const progressItem = document.getElementById(`progress-${i}`);
         const progressBar = progressItem?.querySelector('.progress-bar');
         const statusText = progressItem?.querySelector('.status-text');
@@ -292,6 +316,7 @@ async function uploadFiles(files) {
 
         try {
             console.log(`Uploading file ${i + 1}/${files.length}:`, file.name);
+            console.log('Current sessionId:', currentSessionId); // Debug log
             
             // Update progress
             if (progressBar) progressBar.style.width = '30%';
@@ -726,6 +751,745 @@ function clearResults() {
     if (matchList) matchList.innerHTML = '';
     if (matchCount) matchCount.textContent = '0';
 }
+
+// ========================================
+// SESSION MANAGEMENT
+// ========================================
+const SessionManager = {
+    
+    init() {
+        this.setupEventListeners();
+        this.checkInitialSessionStatus();
+        this.startCleanupMonitoring();
+    },
+
+    // Add these methods inside the SessionManager object:
+    showArchitectureInfo() {
+        // Hide all current steps
+        ['emailStep', 'verificationStep', 'sessionActiveStep', 'successStep', 'errorStep'].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.classList.add('hidden');
+            }
+        });
+        
+        // Show architecture info step
+        const architectureStep = document.getElementById('architectureInfoStep');
+        if (architectureStep) {
+            architectureStep.classList.remove('hidden');
+        }
+    },
+
+    hideArchitectureInfo() {
+        document.getElementById('architectureInfoStep').classList.add('hidden');
+        this.showStep('email');
+    },
+    
+    setupEventListeners() {
+        // Email form submission
+        document.getElementById('emailForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.requestVerificationCode();
+        });
+        
+        // Verification form submission
+        document.getElementById('verificationForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.verifyCode();
+        });
+        
+        // Navigation buttons
+        document.getElementById('backToEmailBtn').addEventListener('click', () => {
+            this.showStep('email');
+        });
+        
+        document.getElementById('resendCodeBtn').addEventListener('click', () => {
+            this.requestVerificationCode();
+        });
+        
+        document.getElementById('refreshStatusBtn').addEventListener('click', () => {
+            this.checkSessionStatus();
+        });
+        
+        document.getElementById('startDemoBtn').addEventListener('click', () => {
+            this.startDemo();
+        });
+        
+        document.getElementById('tryAgainBtn').addEventListener('click', () => {
+            this.showStep('email');
+        });
+        
+        document.getElementById('endSessionBtn').addEventListener('click', () => {
+            this.endSession();
+        });
+        
+        // Auto-check session status every 30 seconds
+        setInterval(() => {
+            if (currentSessionId) {
+                this.validateCurrentSession();
+            } else {
+                this.checkSessionStatus();
+            }
+        }, 30000);
+    },
+    
+    // NEW: Start monitoring for cleanup requirements
+    startCleanupMonitoring() {
+        // Check every 15 seconds for cleanup requirements
+        cleanupCheckInterval = setInterval(async () => {
+            try {
+                const response = await fetch('/api/session/cleanup-check');
+                const data = await response.json();
+                
+                if (data.sessionExpired && data.dataCleanupRequired) {
+                    this.handleDataCleanup(data);
+                }
+            } catch (error) {
+                console.log('Cleanup check failed:', error);
+            }
+        }, 15000);
+    },
+
+    // Add queue management methods
+    joinQueue() {
+        if (!userEmail) {
+            alert('Please verify your email first');
+            return;
+        }
+        
+        fetch('/api/session/join-queue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `email=${encodeURIComponent(userEmail)}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                userQueueId = data.queueId;
+                alert(`You've been added to the queue at position #${data.position}`);
+                this.startQueueMonitoring();
+            } else {
+                alert(data.message || 'Failed to join queue');
+            }
+        })
+        .catch(error => {
+            console.error('Error joining queue:', error);
+            alert('Failed to join queue');
+        });
+    },
+
+    startQueueMonitoring() {
+        // Check queue status every 10 seconds
+        if (queueCheckInterval) {
+            clearInterval(queueCheckInterval);
+        }
+        
+        queueCheckInterval = setInterval(() => {
+            this.checkQueueStatus();
+        }, 10000);
+        
+        // Check immediately
+        this.checkQueueStatus();
+    },
+
+    async checkQueueStatus() {
+        try {
+            const response = await fetch('/api/session/queue-status');
+            const data = await response.json();
+            
+            if (data.success) {
+                this.updateQueueDisplay(data);
+            }
+        } catch (error) {
+            console.error('Error checking queue status:', error);
+        }
+    },
+
+    updateQueueDisplay(queueData) {
+        // Update queue length
+        const queueLength = document.getElementById('queueLength');
+        if (queueLength) {
+            queueLength.textContent = queueData.queueLength || 0;
+        }
+        
+        // Update estimated wait time
+        const estimatedWait = document.getElementById('estimatedWait');
+        if (estimatedWait) {
+            const minutes = queueData.estimatedWaitTime || 0;
+            if (minutes > 0) {
+                estimatedWait.textContent = `${minutes} minutes`;
+            } else {
+                estimatedWait.textContent = 'Ready soon';
+            }
+        }
+        
+        // Update waiting list
+        const waitingList = document.getElementById('waitingList');
+        if (waitingList && queueData.waitingUsers) {
+            waitingList.innerHTML = '';
+            
+            if (queueData.waitingUsers.length > 0) {
+                waitingList.innerHTML = '<div class="text-sm text-gray-600 mb-2">Users in queue:</div>';
+                
+                queueData.waitingUsers.forEach(user => {
+                    const userDiv = document.createElement('div');
+                    userDiv.className = 'flex items-center justify-between bg-white p-2 rounded border border-orange-200';
+                    userDiv.innerHTML = `
+                        <div class="flex items-center">
+                            <span class="w-6 h-6 bg-orange-500 text-white rounded-full flex items-center justify-center text-xs font-bold mr-2">
+                                ${user.position}
+                            </span>
+                            <span class="text-sm font-medium">${user.email}</span>
+                        </div>
+                        <span class="text-xs text-gray-500">Waiting ${user.waitTime}</span>
+                    `;
+                    waitingList.appendChild(userDiv);
+                });
+                
+                if (queueData.queueLength > 3) {
+                    const moreDiv = document.createElement('div');
+                    moreDiv.className = 'text-center text-sm text-gray-500 mt-2';
+                    moreDiv.textContent = `...and ${queueData.queueLength - 3} more users`;
+                    waitingList.appendChild(moreDiv);
+                }
+            } else {
+                waitingList.innerHTML = '<div class="text-center text-sm text-gray-500">No users in queue</div>';
+            }
+        }
+    },
+
+    showSessionActiveStep(data) {
+        document.getElementById('currentUserEmail').textContent = data.userEmail || 'Anonymous User';
+        
+        // Start countdown timer for waiting
+        this.startWaitingTimer(data.remainingSeconds || data.remainingMinutes * 60);
+        
+        // Update queue information
+        this.updateQueueDisplay(data);
+        
+        // Start monitoring queue
+        this.startQueueMonitoring();
+        
+        this.showStep('sessionActive');
+        this.showModal();
+    },
+
+    // NEW: Handle data cleanup when session expires
+    handleDataCleanup(cleanupData) {
+        console.log('Data cleanup triggered:', cleanupData);
+        
+        // Reset current session
+        this.cleanup();
+        
+        // Show cleanup notice
+        this.showCleanupNotice(cleanupData);
+        
+        // Force reload candidates and UI state
+        setTimeout(() => {
+            this.resetDemoState();
+        }, 2000);
+    },
+    
+    // NEW: Reset demo to initial state
+    resetDemoState() {
+        // Reset all UI elements to initial state
+        currentCandidates = [];
+        uploadedInSession = false;
+        
+        // Clear match results
+        const matchResults = document.getElementById('matchResults');
+        if (matchResults) matchResults.classList.add('hidden');
+        
+        // Clear upload progress
+        const uploadProgressSection = document.getElementById('uploadProgressSection');
+        if (uploadProgressSection) uploadProgressSection.classList.add('hidden');
+        
+        const uploadResults = document.getElementById('uploadResults');
+        if (uploadResults) uploadResults.innerHTML = '';
+        
+        // Reset step indicators
+        const step1 = document.getElementById('step1');
+        const step2 = document.getElementById('step2');
+        if (step1) step1.classList.remove('completed');
+        if (step2) step2.classList.remove('completed');
+        
+        // Reset file input
+        const resumeFiles = document.getElementById('resumeFiles');
+        if (resumeFiles) resumeFiles.value = '';
+        
+        // Force reload candidates display
+        displayCandidates();
+        updateStatistics();
+        updateButtonStates();
+        
+        // Re-enable reading sections (they should always be accessible)
+        this.enableReadingSections();
+        
+        console.log('Demo state reset complete');
+    },
+    
+    // NEW: Show cleanup notice
+    showCleanupNotice(cleanupData) {
+        const notice = document.createElement('div');
+        notice.className = 'fixed top-20 left-1/2 transform -translate-x-1/2 bg-blue-500 text-white rounded-lg shadow-lg p-4 z-50';
+        notice.innerHTML = `
+            <div class="flex items-center space-x-3">
+                <i class="fas fa-sync-alt fa-spin text-2xl"></i>
+                <div>
+                    <div class="font-bold">Demo Reset Complete</div>
+                    <div class="text-sm">Previous session ended. ${cleanupData.candidatesCleared} candidates cleared.</div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(notice);
+        
+        // Remove notice after 5 seconds
+        setTimeout(() => {
+            if (notice.parentNode) {
+                notice.parentNode.removeChild(notice);
+            }
+        }, 5000);
+    },
+    
+    async checkInitialSessionStatus() {
+        try {
+            const response = await fetch('/api/session/status');
+            const data = await response.json();
+            
+            if (data.sessionExpired && data.dataCleanupRequired) {
+                this.handleDataCleanup(data);
+            }
+            
+            if (data.hasActiveSession && !data.available) {
+                // Another user has active session
+                this.showSessionActiveStep(data);
+            } else {
+                // No active session, show email entry but don't restrict reading
+                this.enableReadingSections();
+                this.showModal();
+            }
+        } catch (error) {
+            console.error('Error checking initial session status:', error);
+            this.enableReadingSections();
+            this.showModal();
+        }
+    },
+    
+    async checkSessionStatus() {
+        try {
+            const response = await fetch('/api/session/status');
+            const data = await response.json();
+            
+            if (data.sessionExpired && data.dataCleanupRequired) {
+                this.handleDataCleanup(data);
+                return;
+            }
+            
+            if (data.hasActiveSession && !data.available) {
+                this.showSessionActiveStep(data);
+            } else {
+                this.showStep('email');
+            }
+        } catch (error) {
+            console.error('Error checking session status:', error);
+            this.showError('Failed to check session status');
+        }
+    },
+    
+    async requestVerificationCode() {
+        const email = document.getElementById('emailInput').value.trim();
+        if (!email) return;
+        
+        userEmail = email;
+        const btn = document.getElementById('requestCodeBtn');
+        const originalText = btn.innerHTML;
+        
+        try {
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Sending...';
+            btn.disabled = true;
+            
+            const response = await fetch('/api/session/request-verification', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `email=${encodeURIComponent(email)}`
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                document.getElementById('emailDisplay').textContent = email;
+                this.showStep('verification');
+            } else {
+                this.showError(data.message);
+            }
+        } catch (error) {
+            console.error('Error requesting verification:', error);
+            this.showError('Failed to send verification code');
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    },
+    
+    async verifyCode() {
+        const code = document.getElementById('codeInput').value.trim();
+        if (!code || !userEmail) return;
+        
+        const btn = document.getElementById('verifyCodeBtn');
+        const originalText = btn.innerHTML;
+        
+        try {
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Verifying...';
+            btn.disabled = true;
+            
+            const response = await fetch('/api/session/verify-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `email=${encodeURIComponent(userEmail)}&code=${encodeURIComponent(code)}`
+            });
+            
+            const data = await response.json();
+            
+            if (data.success && data.sessionId) {
+                currentSessionId = data.sessionId;
+                console.log('Session started with ID:', currentSessionId); // Debug log
+                document.getElementById('sessionIdDisplay').textContent = data.sessionId.substring(0, 8) + '...';
+                this.showStep('success');
+                this.startSessionTimer(data.sessionDuration * 60); // Convert to seconds
+            } else {
+                this.showError(data.message);
+            }
+        } catch (error) {
+            console.error('Error verifying code:', error);
+            this.showError('Failed to verify code');
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    },
+    
+    startDemo() {
+        this.hideModal();
+        this.showSessionTimer();
+        this.enableUploadControls();
+        this.enableReadingSections();
+        
+        // Scroll to "How It Works" section
+        setTimeout(() => {
+            const howItWorksSection = document.querySelector('.bg-blue-50.rounded-xl.p-6.mb-8');
+            if (howItWorksSection) {
+                howItWorksSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }, 300);
+    },
+    
+    async endSession() {
+        if (!currentSessionId) return;
+        
+        try {
+            await fetch('/api/session/end', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `sessionId=${encodeURIComponent(currentSessionId)}`
+            });
+        } catch (error) {
+            console.error('Error ending session:', error);
+        }
+        
+        this.cleanup();
+        this.refreshPage();
+    },
+    
+    async validateCurrentSession() {
+        if (!currentSessionId) return;
+        
+        try {
+            const response = await fetch('/api/session/status');
+            const data = await response.json();
+            
+            if (data.sessionExpired && data.dataCleanupRequired) {
+                this.handleDataCleanup(data);
+            } else if (!data.hasActiveSession || data.available) {
+                // Session has expired
+                this.sessionExpired();
+            }
+        } catch (error) {
+            console.error('Error validating session:', error);
+        }
+    },
+    
+    sessionExpired() {
+        this.cleanup();
+        this.showSessionExpiredNotice();
+        
+        // Keep reading sections enabled
+        this.enableReadingSections();
+        
+        // Refresh page after 5 seconds
+        setTimeout(() => {
+            this.refreshPage();
+        }, 5000);
+    },
+    
+    showModal() {
+        document.getElementById('sessionModal').classList.remove('hidden');
+        this.showStep('email');
+    },
+    
+    hideModal() {
+        document.getElementById('sessionModal').classList.add('hidden');
+    },
+    
+    showStep(step) {
+        // Hide all steps INCLUDING architectureInfoStep
+        ['emailStep', 'verificationStep', 'sessionActiveStep', 'successStep', 'errorStep', 'architectureInfoStep'].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.classList.add('hidden');
+            }
+        });
+        
+        // Show requested step
+        const stepMap = {
+            'email': 'emailStep',
+            'verification': 'verificationStep', 
+            'sessionActive': 'sessionActiveStep',
+            'success': 'successStep',
+            'error': 'errorStep',
+            'architecture': 'architectureInfoStep'  // Add this line
+        };
+        
+        const stepElement = document.getElementById(stepMap[step]);
+        if (stepElement) {
+            stepElement.classList.remove('hidden');
+        }
+        
+        // Clear inputs when going back to email
+        if (step === 'email') {
+            const emailInput = document.getElementById('emailInput');
+            const codeInput = document.getElementById('codeInput');
+            if (emailInput) emailInput.value = '';
+            if (codeInput) codeInput.value = '';
+        }
+    },
+    
+    showError(message) {
+        document.getElementById('errorMessage').textContent = message;
+        this.showStep('error');
+    },
+    
+    startSessionTimer(seconds) {
+        if (sessionTimerInterval) {
+            clearInterval(sessionTimerInterval);
+        }
+        
+        let remainingSeconds = seconds;
+        
+        const updateDisplay = () => {
+            const minutes = Math.floor(remainingSeconds / 60);
+            const secs = remainingSeconds % 60;
+            const timeString = `${minutes}:${secs.toString().padStart(2, '0')}`;
+            
+            // Update both timer displays
+            document.getElementById('sessionTimer').textContent = timeString;
+            document.getElementById('topTimerDisplay').textContent = timeString;
+            
+            if (remainingSeconds <= 0) {
+                this.sessionExpired();
+                return;
+            }
+            
+            remainingSeconds--;
+        };
+        
+        updateDisplay(); // Initial update
+        sessionTimerInterval = setInterval(updateDisplay, 1000);
+    },
+    
+    startWaitingTimer(seconds) {
+        if (sessionTimerInterval) {
+            clearInterval(sessionTimerInterval);
+        }
+        
+        let remainingSeconds = seconds;
+        
+        const updateDisplay = () => {
+            const minutes = Math.floor(remainingSeconds / 60);
+            const secs = remainingSeconds % 60;
+            const timeString = `${minutes}:${secs.toString().padStart(2, '0')}`;
+            
+            document.getElementById('remainingTime').textContent = timeString;
+            
+            if (remainingSeconds <= 0) {
+                this.checkSessionStatus(); // Check if now available
+                return;
+            }
+            
+            remainingSeconds--;
+        };
+        
+        updateDisplay(); // Initial update
+        sessionTimerInterval = setInterval(updateDisplay, 1000);
+    },
+    
+    showSessionTimer() {
+        document.getElementById('sessionTimerDisplay').classList.remove('hidden');
+    },
+    
+    hideSessionTimer() {
+        document.getElementById('sessionTimerDisplay').classList.add('hidden');
+    },
+    
+    showSessionExpiredNotice() {
+        document.getElementById('sessionExpiredNotice').classList.remove('hidden');
+        this.hideSessionTimer();
+        this.disableUploadControls();
+        // Keep reading sections enabled
+        this.enableReadingSections();
+    },
+    
+    // NEW: Always enable reading sections (segregated access)
+    enableReadingSections() {
+        // Enable all informational/reading sections
+        const readingSections = [
+            'agentic-ai-architecture', 
+            'how-it-works',
+            'tech-stack-info',
+            'features-section',
+            'footer'
+        ];
+        
+        readingSections.forEach(sectionId => {
+            const section = document.getElementById(sectionId);
+            if (section) {
+                section.style.opacity = '1';
+                section.style.pointerEvents = 'auto';
+            }
+        });
+        
+        // Enable navigation links
+        document.querySelectorAll('a[href*="#"], .nav-back-btn').forEach(link => {
+            link.style.pointerEvents = 'auto';
+            link.style.opacity = '1';
+        });
+        
+        // Enable viewing processed candidates (read-only)
+        const candidatesSection = document.getElementById('candidatesList');
+        if (candidatesSection) {
+            candidatesSection.style.opacity = '1';
+            candidatesSection.style.pointerEvents = 'auto';
+        }
+        
+        // Enable job listings (read-only)
+        const jobsSection = document.querySelector('.bg-gray-50'); // Jobs display section
+        if (jobsSection) {
+            jobsSection.style.opacity = '1';
+            jobsSection.style.pointerEvents = 'auto';
+        }
+    },
+    
+    enableUploadControls() {
+        // Enable ONLY upload functionality (demo section)
+        const uploadSection = document.getElementById('uploadProgressSection')?.closest('.bg-white');
+        if (uploadSection) {
+            uploadSection.style.opacity = '1';
+            uploadSection.style.pointerEvents = 'auto';
+        }
+        
+        // Enable file input
+        const fileInput = document.getElementById('resumeFiles');
+        if (fileInput) {
+            fileInput.disabled = false;
+        }
+        
+        // Enable upload buttons
+        document.querySelectorAll('button[onclick*="uploadFiles"], button[onclick*="handleFileSelect"]').forEach(btn => {
+            btn.disabled = false;
+        });
+        
+        // Enable find matches button
+        const findMatchesBtn = document.getElementById('findMatchesBtn');
+        if (findMatchesBtn) {
+            updateButtonStates(); // Use existing function
+        }
+    },
+    
+    disableUploadControls() {
+        // Disable ONLY upload functionality (demo section)
+        const uploadSection = document.getElementById('uploadProgressSection')?.closest('.bg-white');
+        if (uploadSection) {
+            uploadSection.style.opacity = '0.5';
+            uploadSection.style.pointerEvents = 'none';
+        }
+        
+        // Disable file input
+        const fileInput = document.getElementById('resumeFiles');
+        if (fileInput) {
+            fileInput.disabled = true;
+        }
+        
+        // Disable upload buttons
+        document.querySelectorAll('button[onclick*="uploadFiles"], button[onclick*="handleFileSelect"]').forEach(btn => {
+            btn.disabled = true;
+        });
+        
+        // Disable find matches button
+        const findMatchesBtn = document.getElementById('findMatchesBtn');
+        if (findMatchesBtn) {
+            findMatchesBtn.disabled = true;
+        }
+    },
+    
+    cleanup() {
+        currentSessionId = null;
+        userEmail = null;
+        userQueueId = null;  // Clear queue ID
+        
+        // Clear session timer
+        if (sessionTimerInterval) {
+            clearInterval(sessionTimerInterval);
+            sessionTimerInterval = null;
+        }
+        
+        // Clear cleanup check interval
+        if (cleanupCheckInterval) {
+            clearInterval(cleanupCheckInterval);
+            cleanupCheckInterval = null;
+        }
+        
+        // Clear queue check interval
+        if (queueCheckInterval) {
+            clearInterval(queueCheckInterval);
+            queueCheckInterval = null;
+        }
+        
+        // Hide UI elements
+        this.hideModal();
+        this.hideSessionTimer();
+        
+        // Clear any queue-related UI states
+        const queueInfo = document.getElementById('queueInfo');
+        if (queueInfo) {
+            const waitingList = document.getElementById('waitingList');
+            if (waitingList) {
+                waitingList.innerHTML = '';
+            }
+            const queueLength = document.getElementById('queueLength');
+            if (queueLength) {
+                queueLength.textContent = '0';
+            }
+            const estimatedWait = document.getElementById('estimatedWait');
+            if (estimatedWait) {
+                estimatedWait.textContent = 'calculating...';
+            }
+        }
+    },
+
+    refreshPage() {
+        window.location.reload();
+    }
+
+}; // FIXED: Properly close SessionManager object
 
 // ========================================
 // DEBUG FUNCTIONS

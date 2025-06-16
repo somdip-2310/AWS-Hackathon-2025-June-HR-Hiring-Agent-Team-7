@@ -1,10 +1,11 @@
-// src/main/java/com/hackathon/hr/controller/HRController.java
+// FIXED HRController.java - Remove duplicate imports and endpoints
 package com.hackathon.hr.controller;
 
 import com.hackathon.hr.model.Candidate;
 import com.hackathon.hr.model.JobRequirement;
 import com.hackathon.hr.model.MatchResult;
 import com.hackathon.hr.service.CandidateService;
+import com.hackathon.hr.service.SessionManagementService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,6 +29,7 @@ public class HRController {
     private static final Logger logger = LoggerFactory.getLogger(HRController.class);
 
     private final CandidateService candidateService;
+    private final SessionManagementService sessionManagementService;
     
     // Service configuration from properties
     @Value("${demo.info.title:HR Resume Screening AI Demo}")
@@ -51,8 +53,9 @@ public class HRController {
     // Track upload processing status (in-memory for demo purposes)
     private final Map<String, ProcessingStatus> processingStatusMap = new ConcurrentHashMap<>();
 
-    public HRController(CandidateService candidateService) {
+    public HRController(CandidateService candidateService, SessionManagementService sessionManagementService) {
         this.candidateService = candidateService;
+        this.sessionManagementService = sessionManagementService;
     }
 
     // ========================================
@@ -81,12 +84,247 @@ public class HRController {
     }
 
     // ========================================
-    // RESUME PROCESSING ENDPOINTS
+    // SESSION MANAGEMENT ENDPOINTS (FIXED - NO DUPLICATES)
+    // ========================================
+
+    @GetMapping("/api/session/status")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> getSessionStatus() {
+        try {
+            // First check for cleanup
+            SessionManagementService.SessionCleanupResult cleanupResult = 
+                sessionManagementService.cleanupExpiredSessions();
+            
+            // Get current session info
+            Map<String, Object> response = sessionManagementService.getCurrentSessionInfo();
+            
+            // Add cleanup information
+            response.put("sessionExpired", cleanupResult.isSessionExpired());
+            response.put("dataCleanupRequired", cleanupResult.isSessionExpired());
+            
+            // If session expired, clear data
+            if (cleanupResult.isSessionExpired()) {
+                int deletedCount = candidateService.clearAllCandidates();
+                response.put("candidatesCleared", deletedCount);
+            }
+            
+            response.put("timestamp", LocalDateTime.now().toString());
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            logger.error("Error getting session status", e);
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "Failed to get session status");
+            return ResponseEntity.status(500).body(error);
+        }
+    }
+
+    @GetMapping("/api/session/cleanup-check")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> checkAndCleanupSessions() {
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            // Check for expired sessions and get cleanup result
+            SessionManagementService.SessionCleanupResult cleanupResult = 
+                sessionManagementService.cleanupExpiredSessions();
+            
+            response.put("sessionExpired", cleanupResult.isSessionExpired());
+            response.put("dataCleanupRequired", cleanupResult.isSessionExpired());
+            
+            // If session expired, also clear all candidate data
+            if (cleanupResult.isSessionExpired()) {
+                int deletedCount = candidateService.clearAllCandidates();
+                response.put("candidatesCleared", deletedCount);
+                response.put("expiredUserEmail", 
+                    maskEmailForLogging(cleanupResult.getExpiredUserEmail()));
+                
+                logger.info("Session expired - cleared {} candidates for user: {}", 
+                           deletedCount, 
+                           maskEmailForLogging(cleanupResult.getExpiredUserEmail()));
+            }
+            
+            response.put("timestamp", LocalDateTime.now().toString());
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            logger.error("Error during cleanup check", e);
+            response.put("error", "Failed to check cleanup status");
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    @PostMapping("/api/session/request-verification")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> requestEmailVerification(@RequestParam("email") String email) {
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            SessionManagementService.EmailVerificationResult result = 
+                sessionManagementService.sendVerificationCode(email);
+            
+            response.put("success", result.isSuccess());
+            response.put("message", result.getMessage());
+            response.put("timestamp", LocalDateTime.now().toString());
+            
+            if (result.isSuccess()) {
+                logger.info("Verification code requested for email: {}", maskEmailForLogging(email));
+                return ResponseEntity.ok(response);
+            } else {
+                return ResponseEntity.badRequest().body(response);
+            }
+            
+        } catch (Exception e) {
+            logger.error("Error requesting verification for email: {}", maskEmailForLogging(email), e);
+            response.put("success", false);
+            response.put("message", "Failed to send verification code");
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    @PostMapping("/api/session/verify-email")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> verifyEmail(
+            @RequestParam("email") String email, 
+            @RequestParam("code") String code) {
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            SessionManagementService.EmailVerificationResult verifyResult = 
+                sessionManagementService.verifyEmail(email, code);
+            
+            if (!verifyResult.isSuccess()) {
+                response.put("success", false);
+                response.put("message", verifyResult.getMessage());
+                return ResponseEntity.badRequest().body(response);
+            }
+            
+            // Start session after successful verification
+            SessionManagementService.SessionStartResult sessionResult = 
+                sessionManagementService.startSession(email);
+            
+            response.put("success", sessionResult.isSuccess());
+            response.put("message", sessionResult.getMessage());
+            response.put("sessionId", sessionResult.getSessionId());
+            response.put("sessionDuration", 7); // 7 minutes
+            response.put("timestamp", LocalDateTime.now().toString());
+            
+            if (sessionResult.isSuccess()) {
+                logger.info("Email verified and session started for: {}", maskEmailForLogging(email));
+                return ResponseEntity.ok(response);
+            } else {
+                return ResponseEntity.badRequest().body(response);
+            }
+            
+        } catch (Exception e) {
+            logger.error("Error verifying email: {}", maskEmailForLogging(email), e);
+            response.put("success", false);
+            response.put("message", "Failed to verify email");
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    @PostMapping("/api/session/end")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> endSession(@RequestParam("sessionId") String sessionId) {
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            boolean ended = sessionManagementService.endSession(sessionId);
+            
+            response.put("success", ended);
+            response.put("message", ended ? "Session ended successfully" : "Session not found");
+            response.put("timestamp", LocalDateTime.now().toString());
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            logger.error("Error ending session: {}", sessionId, e);
+            response.put("success", false);
+            response.put("message", "Failed to end session");
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    @PostMapping("/api/session/force-reset")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> forceResetDemo() {
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            // Clear all candidates
+            int deletedCount = candidateService.clearAllCandidates();
+            
+            // End any active sessions
+            sessionManagementService.cleanupExpiredSessions();
+            
+            response.put("success", true);
+            response.put("candidatesCleared", deletedCount);
+            response.put("message", "Demo reset successfully");
+            response.put("timestamp", LocalDateTime.now().toString());
+            
+            logger.info("Demo force reset - cleared {} candidates", deletedCount);
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            logger.error("Error during force reset", e);
+            response.put("success", false);
+            response.put("error", "Failed to reset demo");
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    // ========================================
+    // EMAIL TRACKING ENDPOINTS
+    // ========================================
+
+    @GetMapping("/api/admin/emails")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> getEmailRecords() {
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            List<Map<String, Object>> emailRecords = sessionManagementService.getAllEmailRecords();
+            Map<String, Object> statistics = sessionManagementService.getEmailStatistics();
+            
+            response.put("success", true);
+            response.put("emailRecords", emailRecords);
+            response.put("statistics", statistics);
+            response.put("timestamp", LocalDateTime.now().toString());
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            logger.error("Error retrieving email records", e);
+            response.put("success", false);
+            response.put("error", "Failed to retrieve email records");
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    @GetMapping("/api/admin/email-stats")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> getEmailStatistics() {
+        try {
+            Map<String, Object> statistics = sessionManagementService.getEmailStatistics();
+            return ResponseEntity.ok(statistics);
+        } catch (Exception e) {
+            logger.error("Error retrieving email statistics", e);
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "Failed to retrieve email statistics");
+            return ResponseEntity.status(500).body(error);
+        }
+    }
+
+    // ========================================
+    // RESUME PROCESSING ENDPOINTS (WITH SESSION VALIDATION)
     // ========================================
 
     @PostMapping("/api/upload")
     @ResponseBody
-    public ResponseEntity<Map<String, Object>> uploadResume(@RequestParam("file") MultipartFile file) {
+    public ResponseEntity<Map<String, Object>> uploadResume(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "sessionId", required = false) String sessionId) {
         Map<String, Object> response = new HashMap<>();
         String trackingId = UUID.randomUUID().toString();
         LocalDateTime uploadStartTime = LocalDateTime.now();
@@ -97,6 +335,14 @@ public class HRController {
                 response.put("success", false);
                 response.put("error", "Resume processing is currently disabled");
                 return ResponseEntity.status(503).body(response);
+            }
+            
+            // Validate session for upload
+            if (!sessionManagementService.validateSessionForUpload(sessionId)) {
+                response.put("success", false);
+                response.put("error", "Invalid or expired session. Please start a new session.");
+                response.put("requiresNewSession", true);
+                return ResponseEntity.status(401).body(response);
             }
 
             // Validate file
@@ -109,7 +355,7 @@ public class HRController {
             String contentType = file.getContentType();
             if (!isValidFileType(contentType)) {
                 response.put("success", false);
-                response.put("error", "Only PDF and Word documents are supported");
+                response.put("error", "Only PDF is supported");
                 return ResponseEntity.badRequest().body(response);
             }
 
@@ -125,7 +371,7 @@ public class HRController {
             processingStatusMap.put(trackingId, status);
 
             // Process resume
-            logger.info("Processing resume upload: {}", file.getOriginalFilename());
+            logger.info("Processing resume upload: {} for session: {}", file.getOriginalFilename(), sessionId);
             status.setStatus("extracting");
             status.setProgress(30);
             
@@ -146,6 +392,7 @@ public class HRController {
             response.put("candidateId", candidate.getId());
             response.put("fileName", candidate.getFileName());
             response.put("trackingId", trackingId);
+            response.put("sessionId", sessionId);
             response.put("message", "Resume processed successfully");
             response.put("processingTime", processingDuration.toMillis() + "ms");
             response.put("timestamp", LocalDateTime.now().toString());
@@ -156,13 +403,13 @@ public class HRController {
             extractedData.put("experienceLevel", candidate.getExperienceLevel());
             response.put("extractedData", extractedData);
 
-            logger.info("Resume uploaded successfully: {} (ID: {}) in {}ms", 
-                       file.getOriginalFilename(), candidate.getId(), processingDuration.toMillis());
+            logger.info("Resume uploaded successfully: {} (ID: {}) in {}ms for session: {}", 
+                       file.getOriginalFilename(), candidate.getId(), processingDuration.toMillis(), sessionId);
             
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            logger.error("Error uploading resume: {}", file.getOriginalFilename(), e);
+            logger.error("Error uploading resume: {} for session: {}", file.getOriginalFilename(), sessionId, e);
             
             // Update status to failed
             if (processingStatusMap.containsKey(trackingId)) {
@@ -181,13 +428,24 @@ public class HRController {
 
     @PostMapping("/api/upload/batch")
     @ResponseBody
-    public ResponseEntity<Map<String, Object>> uploadMultipleResumes(@RequestParam("files") MultipartFile[] files) {
+    public ResponseEntity<Map<String, Object>> uploadMultipleResumes(
+            @RequestParam("files") MultipartFile[] files,
+            @RequestParam(value = "sessionId", required = false) String sessionId) {
         Map<String, Object> response = new HashMap<>();
+        
+        // Validate session for upload
+        if (!sessionManagementService.validateSessionForUpload(sessionId)) {
+            response.put("success", false);
+            response.put("error", "Invalid or expired session. Please start a new session.");
+            response.put("requiresNewSession", true);
+            return ResponseEntity.status(401).body(response);
+        }
+        
         List<Map<String, Object>> results = new ArrayList<>();
         int successCount = 0;
         LocalDateTime batchStartTime = LocalDateTime.now();
         
-        logger.info("Processing batch upload of {} files", files.length);
+        logger.info("Processing batch upload of {} files for session: {}", files.length, sessionId);
         
         for (MultipartFile file : files) {
             Map<String, Object> fileResult = new HashMap<>();
@@ -210,7 +468,7 @@ public class HRController {
             } catch (Exception e) {
                 fileResult.put("success", false);
                 fileResult.put("error", e.getMessage());
-                logger.error("Error processing file in batch: {}", file.getOriginalFilename(), e);
+                logger.error("Error processing file in batch: {} for session: {}", file.getOriginalFilename(), sessionId, e);
             }
             
             results.add(fileResult);
@@ -222,11 +480,12 @@ public class HRController {
         response.put("totalFiles", files.length);
         response.put("successCount", successCount);
         response.put("failureCount", files.length - successCount);
+        response.put("sessionId", sessionId);
         response.put("processingTime", batchDuration.toMillis() + "ms");
         response.put("timestamp", LocalDateTime.now().toString());
         
-        logger.info("Batch upload completed: {}/{} successful in {}ms", 
-                   successCount, files.length, batchDuration.toMillis());
+        logger.info("Batch upload completed for session {}: {}/{} successful in {}ms", 
+                   sessionId, successCount, files.length, batchDuration.toMillis());
         
         return ResponseEntity.ok(response);
     }
@@ -347,6 +606,48 @@ public class HRController {
             return ResponseEntity.status(500).build();
         }
     }
+    
+    //Queue controllers added
+    
+    @GetMapping("/api/session/queue-status")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> getQueueStatus() {
+        try {
+            Map<String, Object> queueStatus = sessionManagementService.getQueueStatus();
+            queueStatus.put("success", true);
+            queueStatus.put("timestamp", LocalDateTime.now().toString());
+            return ResponseEntity.ok(queueStatus);
+        } catch (Exception e) {
+            logger.error("Error getting queue status", e);
+            Map<String, Object> error = new HashMap<>();
+            error.put("success", false);
+            error.put("error", "Failed to get queue status");
+            return ResponseEntity.status(500).body(error);
+        }
+    }
+
+    @PostMapping("/api/session/join-queue")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> joinQueue(@RequestParam("email") String email) {
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            String queueId = sessionManagementService.addToQueue(email);
+            int position = sessionManagementService.getQueuePosition(queueId);
+            
+            response.put("success", true);
+            response.put("queueId", queueId);
+            response.put("position", position);
+            response.put("message", "You have been added to the queue at position #" + position);
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error joining queue", e);
+            response.put("success", false);
+            response.put("error", "Failed to join queue");
+            return ResponseEntity.status(500).body(response);
+        }
+    }
 
     @GetMapping("/api/candidates/{candidateId}")
     @ResponseBody
@@ -365,6 +666,60 @@ public class HRController {
         } catch (Exception e) {
             logger.error("Error retrieving candidate details for ID: {}", candidateId, e);
             return ResponseEntity.status(500).build();
+        }
+    }
+
+    @DeleteMapping("/api/candidates/{candidateId}")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> deleteCandidate(@PathVariable String candidateId) {
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            boolean deleted = candidateService.deleteCandidate(candidateId);
+            
+            if (deleted) {
+                response.put("success", true);
+                response.put("message", "Candidate deleted successfully");
+                logger.info("Candidate deleted: {}", candidateId);
+            } else {
+                response.put("success", false);
+                response.put("error", "Candidate not found");
+            }
+            
+            response.put("timestamp", LocalDateTime.now().toString());
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            logger.error("Error deleting candidate: {}", candidateId, e);
+            response.put("success", false);
+            response.put("error", "Failed to delete candidate: " + e.getMessage());
+            response.put("timestamp", LocalDateTime.now().toString());
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    @DeleteMapping("/api/candidates/all")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> clearAllCandidates() {
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            int deletedCount = candidateService.clearAllCandidates();
+            
+            response.put("success", true);
+            response.put("message", "All candidates cleared successfully");
+            response.put("deletedCount", deletedCount);
+            response.put("timestamp", LocalDateTime.now().toString());
+            
+            logger.info("All candidates cleared: {} deleted", deletedCount);
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            logger.error("Error clearing all candidates", e);
+            response.put("success", false);
+            response.put("error", "Failed to clear candidates: " + e.getMessage());
+            response.put("timestamp", LocalDateTime.now().toString());
+            return ResponseEntity.status(500).body(response);
         }
     }
 
@@ -564,15 +919,73 @@ public class HRController {
     }
 
     // ========================================
+    // SAMPLE DATA ENDPOINTS
+    // ========================================
+    
+    @GetMapping("/api/sample-resumes/download")
+    @ResponseBody
+    public ResponseEntity<Resource> downloadSampleResumes() {
+        try {
+            // Load the zip file from resources
+            Resource resource = new ClassPathResource("static/sample-resumes/sample-resumes.zip");
+            
+            if (!resource.exists()) {
+                logger.error("Sample resumes zip file not found");
+                return ResponseEntity.notFound().build();
+            }
+            
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"HR-Agent-Sample-Resumes.zip\"")
+                    .header(HttpHeaders.CONTENT_TYPE, "application/zip")
+                    .body(resource);
+                    
+        } catch (Exception e) {
+            logger.error("Error downloading sample resumes", e);
+            return ResponseEntity.status(500).build();
+        }
+    }
+    
+    @GetMapping("/api/sample-resumes/list")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> listSampleResumes() {
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            List<String> sampleResumes = Arrays.asList(
+                "John_Smith_Software_Engineer.pdf",
+                "Sarah_Johnson_Data_Scientist.pdf",
+                "Michael_Chen_DevOps_Engineer.pdf",
+                "Emily_Williams_Angular_Developer.pdf",
+                "David_Kumar_Java_Developer.pdf",
+                "Lisa_Anderson_Senior_Software_Engineer.pdf",
+                "Robert_Martinez_Sales_Analyst.pdf",
+                "Jennifer_Lee_Full_Stack_Developer.pdf",
+                "William_Brown_Cloud_Architect.pdf",
+                "Maria_Garcia_Business_Analyst.pdf"
+            );
+            
+            response.put("success", true);
+            response.put("files", sampleResumes);
+            response.put("count", sampleResumes.size());
+            response.put("description", "Sample resumes for testing HR Agent functionality");
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            logger.error("Error listing sample resumes", e);
+            response.put("success", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    // ========================================
     // UTILITY METHODS
     // ========================================
 
     private boolean isValidFileType(String contentType) {
         return contentType != null && (
-                contentType.equals("application/pdf") ||
-                contentType.equals("application/msword") ||
-                contentType.equals("application/vnd.openxmlformats-officedocument.wordprocessingml.document") ||
-                contentType.equals("text/plain")
+                contentType.equals("application/pdf")
         );
     }
 
@@ -639,64 +1052,19 @@ public class HRController {
                 .toList();
     }
 
-    // ========================================
-    // SAMPLE DATA ENDPOINTS
-    // ========================================
-    
-    @GetMapping("/api/sample-resumes/download")
-    @ResponseBody
-    public ResponseEntity<Resource> downloadSampleResumes() {
-        try {
-            // Load the zip file from resources
-            Resource resource = new ClassPathResource("static/sample-resumes/sample-resumes.zip");
-            
-            if (!resource.exists()) {
-                logger.error("Sample resumes zip file not found");
-                return ResponseEntity.notFound().build();
-            }
-            
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"HR-Agent-Sample-Resumes.zip\"")
-                    .header(HttpHeaders.CONTENT_TYPE, "application/zip")
-                    .body(resource);
-                    
-        } catch (Exception e) {
-            logger.error("Error downloading sample resumes", e);
-            return ResponseEntity.status(500).build();
-        }
-    }
-    
-    @GetMapping("/api/sample-resumes/list")
-    @ResponseBody
-    public ResponseEntity<Map<String, Object>> listSampleResumes() {
-        Map<String, Object> response = new HashMap<>();
+    // Helper method for email masking in logs
+    private String maskEmailForLogging(String email) {
+        if (email == null || email.length() < 3) return email;
+        int atIndex = email.indexOf('@');
+        if (atIndex <= 0) return email;
         
-        try {
-            List<String> sampleResumes = Arrays.asList(
-                "John_Smith_Software_Engineer.pdf",
-                "Sarah_Johnson_Data_Scientist.pdf",
-                "Michael_Chen_DevOps_Engineer.pdf",
-                "Emily_Williams_Angular_Developer.pdf",
-                "David_Kumar_Java_Developer.pdf",
-                "Lisa_Anderson_Senior_Software_Engineer.pdf",
-                "Robert_Martinez_Sales_Analyst.pdf",
-                "Jennifer_Lee_Full_Stack_Developer.pdf",
-                "William_Brown_Cloud_Architect.pdf",
-                "Maria_Garcia_Business_Analyst.pdf"
-            );
-            
-            response.put("success", true);
-            response.put("files", sampleResumes);
-            response.put("count", sampleResumes.size());
-            response.put("description", "Sample resumes for testing HR Agent functionality");
-            
-            return ResponseEntity.ok(response);
-            
-        } catch (Exception e) {
-            logger.error("Error listing sample resumes", e);
-            response.put("success", false);
-            response.put("error", e.getMessage());
-            return ResponseEntity.status(500).body(response);
+        String username = email.substring(0, atIndex);
+        String domain = email.substring(atIndex);
+        
+        if (username.length() <= 2) {
+            return username.charAt(0) + "*" + domain;
+        } else {
+            return username.charAt(0) + "*".repeat(username.length() - 2) + username.charAt(username.length() - 1) + domain;
         }
     }
 
@@ -747,61 +1115,5 @@ public class HRController {
         public String getError() { return error; }
         public void setError(String error) { this.error = error; }
         public LocalDateTime getStartTime() { return startTime; }
-    }
-    
- // Add these endpoints to your HRController.java
-
-    @DeleteMapping("/api/candidates/{candidateId}")
-    @ResponseBody
-    public ResponseEntity<Map<String, Object>> deleteCandidate(@PathVariable String candidateId) {
-        Map<String, Object> response = new HashMap<>();
-        
-        try {
-            boolean deleted = candidateService.deleteCandidate(candidateId);
-            
-            if (deleted) {
-                response.put("success", true);
-                response.put("message", "Candidate deleted successfully");
-                logger.info("Candidate deleted: {}", candidateId);
-            } else {
-                response.put("success", false);
-                response.put("error", "Candidate not found");
-            }
-            
-            response.put("timestamp", LocalDateTime.now().toString());
-            return ResponseEntity.ok(response);
-            
-        } catch (Exception e) {
-            logger.error("Error deleting candidate: {}", candidateId, e);
-            response.put("success", false);
-            response.put("error", "Failed to delete candidate: " + e.getMessage());
-            response.put("timestamp", LocalDateTime.now().toString());
-            return ResponseEntity.status(500).body(response);
-        }
-    }
-
-    @DeleteMapping("/api/candidates/all")
-    @ResponseBody
-    public ResponseEntity<Map<String, Object>> clearAllCandidates() {
-        Map<String, Object> response = new HashMap<>();
-        
-        try {
-            int deletedCount = candidateService.clearAllCandidates();
-            
-            response.put("success", true);
-            response.put("message", "All candidates cleared successfully");
-            response.put("deletedCount", deletedCount);
-            response.put("timestamp", LocalDateTime.now().toString());
-            
-            logger.info("All candidates cleared: {} deleted", deletedCount);
-            return ResponseEntity.ok(response);
-            
-        } catch (Exception e) {
-            logger.error("Error clearing all candidates", e);
-            response.put("success", false);
-            response.put("error", "Failed to clear candidates: " + e.getMessage());
-            response.put("timestamp", LocalDateTime.now().toString());
-            return ResponseEntity.status(500).body(response);
-        }
     }
 }

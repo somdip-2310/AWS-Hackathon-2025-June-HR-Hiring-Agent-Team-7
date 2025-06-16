@@ -5,18 +5,33 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import javax.annotation.PostConstruct;
 
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
     
-    @Value("${cors.allowed.origins}")
+    private static final Logger logger = LoggerFactory.getLogger(WebMvcConfig.class);
+    
+    // Read from environment variable or use default from application.properties
+    @Value("${CORS_ALLOWED_ORIGINS:${cors.allowed.origins:https://demos.somdip.dev,https://somdip.dev,https://www.somdip.dev,http://localhost:8080,http://localhost:8081}}")
     private String allowedOrigins;
     
-    @Value("${cors.allowed.methods}")
+    // Use default if not provided
+    @Value("${cors.allowed.methods:GET,POST,PUT,DELETE,OPTIONS,HEAD}")
     private String allowedMethods;
     
     @Value("${cors.max.age:3600}")
     private long corsMaxAge;
+    
+    @PostConstruct
+    public void logConfiguration() {
+        logger.info("CORS Configuration initialized:");
+        logger.info("  Allowed Origins: {}", allowedOrigins);
+        logger.info("  Allowed Methods: {}", allowedMethods);
+        logger.info("  Max Age: {}", corsMaxAge);
+    }
     
     @Override
     public void addCorsMappings(CorsRegistry registry) {
@@ -43,6 +58,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
             .allowedHeaders("*")
             .allowCredentials(true)
             .maxAge(corsMaxAge);
+            
+        logger.info("CORS configured with {} allowed origins", origins.length);
     }
     
     @Override

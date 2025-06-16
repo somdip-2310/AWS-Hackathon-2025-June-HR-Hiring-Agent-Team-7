@@ -11,27 +11,37 @@ import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelRequest;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelResponse;
+import javax.annotation.PostConstruct;
 
 @Service
 public class BedrockService {
-
+    
     private static final Logger logger = LoggerFactory.getLogger(BedrockService.class);
     
     private final BedrockRuntimeClient bedrockRuntimeClient;
     private final ObjectMapper objectMapper;
-
-    @Value("${aws.bedrock.model-id}")
+    
+    // Read from environment variable first, then fall back to property
+    @Value("${BEDROCK_MODEL_ID:${aws.bedrock.model-id:us.amazon.nova-premier-v1:0}}")
     private String modelId;
-
+    
     public BedrockService(BedrockRuntimeClient bedrockRuntimeClient) {
         this.bedrockRuntimeClient = bedrockRuntimeClient;
         this.objectMapper = new ObjectMapper();
     }
-
+    
+    @PostConstruct
+    public void init() {
+        logger.info("BedrockService initialized with model: {}", modelId);
+        if (modelId == null || modelId.isEmpty()) {
+            throw new IllegalStateException("Bedrock model ID is not configured");
+        }
+    }
+    
     public String invokeModel(String prompt) {
         try {
             logger.debug("Invoking model {} with prompt: {}", modelId, prompt);
-
+            
             // Create the correct JSON payload for Nova Premier
             String jsonBody = String.format("""
                 {
@@ -52,14 +62,14 @@ public class BedrockService {
                     }
                 }
                 """, escapeJsonString(prompt));
-
+                
             InvokeModelRequest request = InvokeModelRequest.builder()
                     .modelId(modelId)
                     .contentType("application/json")
                     .accept("application/json")
                     .body(SdkBytes.fromUtf8String(jsonBody))
                     .build();
-
+                    
             InvokeModelResponse response = bedrockRuntimeClient.invokeModel(request);
             
             // Parse response
@@ -78,9 +88,9 @@ public class BedrockService {
             
             logger.debug("Model response: {}", responseText);
             return responseText;
-
+            
         } catch (Exception e) {
-            logger.error("Error invoking Bedrock model", e);
+            logger.error("Error invoking Bedrock model: {}", modelId, e);
             throw new RuntimeException("Failed to invoke AI model", e);
         }
     }

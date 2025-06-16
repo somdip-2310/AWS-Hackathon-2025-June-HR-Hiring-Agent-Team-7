@@ -1,22 +1,176 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
 <head>
+    <!-- SEO Meta Tags -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HR Hiring Agent - AI-Powered Resume Screening</title>
+    <title>AI-Powered HR Hiring Agent Demo | Somdip Roy Portfolio</title>
+    <meta name="description" content="Experience an intelligent HR hiring system that uses AWS AI services (Textract, Bedrock) to automatically screen PDF resumes, extract skills, and match candidates to job requirements. Built by Somdip Roy.">
+    <meta name="keywords" content="AI HR system, PDF resume screening, AWS Textract, Amazon Bedrock, candidate matching, recruitment automation, Somdip Roy, machine learning, Spring Boot">
+    <meta name="author" content="Somdip Roy">
+    <meta name="robots" content="index, follow">
+    
+    <!-- Open Graph / Social Media -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="AI-Powered HR Hiring Agent Demo | Somdip Roy">
+    <meta property="og:description" content="Intelligent PDF resume screening and candidate matching using AWS AI services. Upload PDF resumes, analyze skills, and find perfect job matches automatically.">
+    <meta property="og:image" content="https://somdip.dev/images/hr-demo-preview.jpg">
+    <meta property="og:url" content="https://demos.somdip.dev">
+    <meta property="og:site_name" content="Somdip Roy Portfolio">
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="AI-Powered HR Hiring Agent Demo">
+    <meta name="twitter:description" content="Experience intelligent PDF resume screening with AWS AI services">
+    <meta name="twitter:image" content="https://somdip.dev/images/hr-demo-preview.jpg">
+    <meta name="twitter:creator" content="@somdiproy">
+    
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://demos.somdip.dev">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "AI-Powered HR Hiring Agent",
+        "description": "Intelligent PDF resume screening and candidate matching system using AWS AI services",
+        "url": "https://demos.somdip.dev",
+        "author": {
+            "@type": "Person",
+            "name": "Somdip Roy",
+            "url": "https://somdip.dev"
+        },
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web Browser",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        },
+        "featureList": [
+            "PDF Resume OCR with AWS Textract",
+            "AI-powered skill extraction",
+            "Automated candidate matching",
+            "Job requirement analysis"
+        ]
+    }
+    </script>
+    
+    <!-- CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link th:href="@{/css/main.css}" rel="stylesheet" type="text/css">
+    
+    <!-- Custom Styles -->
+    <style>
+        .nav-back-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            transition: all 0.3s ease;
+        }
+        .nav-back-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        }
+        .seo-breadcrumb {
+            font-size: 0.875rem;
+            color: #6b7280;
+        }
+        .feature-highlight {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .demo-badge {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+    </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
-    <!-- Header -->
+    <!-- Top Navigation Header -->
+    <header class="bg-white shadow-sm border-b sticky top-0 z-50" role="banner">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Back to Portfolio Button -->
+                <div class="flex items-center space-x-4">
+                    <a href="https://somdip.dev" 
+                       class="nav-back-btn inline-flex items-center px-4 py-2 rounded-lg text-white font-medium text-sm shadow-lg"
+                       aria-label="Return to Somdip Roy's main portfolio website">
+                        <i class="fas fa-arrow-left mr-2"></i>
+                        Back to Somdip.dev
+                    </a>
+                    
+                    <!-- Breadcrumb Navigation -->
+                    <nav aria-label="Breadcrumb" class="hidden sm:flex">
+                        <ol class="flex items-center space-x-2 seo-breadcrumb">
+                            <li><a href="https://somdip.dev" class="hover:text-blue-600">Portfolio</a></li>
+                            <li><i class="fas fa-chevron-right text-xs"></i></li>
+                            <li><a href="https://somdip.dev/ai-demos" class="hover:text-blue-600">AI Demos</a></li>
+                            <li><i class="fas fa-chevron-right text-xs"></i></li>
+                            <li class="text-gray-900 font-medium">HR Hiring Agent</li>
+                        </ol>
+                    </nav>
+                </div>
+                
+                <!-- Demo Badge & Contact -->
+                <div class="flex items-center space-x-3">
+                    <span class="demo-badge text-white px-3 py-1 rounded-full text-xs font-semibold">
+                        <i class="fas fa-flask mr-1"></i>
+                        LIVE DEMO
+                    </span>
+                    <a href="https://somdip.dev/contact" 
+                       class="text-gray-600 hover:text-blue-600 text-sm font-medium hidden sm:block">
+                        <i class="fas fa-envelope mr-1"></i>
+                        Contact
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Section with Enhanced Title -->
     <div class="gradient-bg text-white py-8">
         <div class="container mx-auto px-4 text-center">
-            <h1 class="text-4xl font-bold mb-3 flex items-center justify-center">
+            <h1 class="text-4xl md:text-5xl font-bold mb-3 flex items-center justify-center">
                 <i class="fas fa-robot mr-4"></i>
-                HR Hiring Agent
+                AI-Powered <span class="feature-highlight text-white">HR Hiring Agent</span>
             </h1>
-            <p class="text-lg opacity-90">AI-Powered Resume Screening & Job Matching Made Simple</p>
+            <p class="text-lg opacity-90 mb-4">Intelligent PDF Resume Screening & Job Matching with AWS AI Services</p>
+            
+            <!-- Key Features for SEO -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 max-w-4xl mx-auto">
+                <div class="bg-white bg-opacity-10 backdrop-blur-sm rounded-lg p-3">
+                    <h3 class="font-semibold text-sm mb-1">
+                        <i class="fas fa-file-pdf text-red-300 mr-2"></i>
+                        PDF OCR Processing
+                    </h3>
+                    <p class="text-xs opacity-80">AWS Textract extracts text from PDF resumes with precision</p>
+                </div>
+                <div class="bg-white bg-opacity-10 backdrop-blur-sm rounded-lg p-3">
+                    <h3 class="font-semibold text-sm mb-1">
+                        <i class="fas fa-brain text-purple-300 mr-2"></i>
+                        AI Skill Analysis
+                    </h3>
+                    <p class="text-xs opacity-80">Amazon Bedrock analyzes and categorizes skills intelligently</p>
+                </div>
+                <div class="bg-white bg-opacity-10 backdrop-blur-sm rounded-lg p-3">
+                    <h3 class="font-semibold text-sm mb-1">
+                        <i class="fas fa-users text-green-300 mr-2"></i>
+                        Smart Matching
+                    </h3>
+                    <p class="text-xs opacity-80">Advanced algorithms match candidates to job requirements</p>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -56,18 +210,19 @@
     </div>
 
     <div class="container mx-auto px-4 py-8 max-w-7xl">
-        <!-- How It Works -->
+        <!-- How It Works - User Perspective -->
         <div class="bg-blue-50 rounded-xl p-6 mb-8">
             <h2 class="text-lg font-semibold text-gray-800 mb-4">
                 <i class="fas fa-info-circle text-blue-600 mr-2"></i>
-                How It Works
+                How It Works - User Perspective
             </h2>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="flex items-start">
                     <div class="step-number">1</div>
                     <div>
-                        <h3 class="font-semibold">Upload Resumes</h3>
-                        <p class="text-sm text-gray-600">Select multiple PDF, DOC, or DOCX files</p>
+                        <h3 class="font-semibold">Upload PDF Resumes</h3>
+                        <p class="text-sm text-gray-600">Select multiple PDF files for processing</p>
+                        <p class="text-xs text-blue-600 mt-1">AI agents automatically extract and analyze content</p>
                     </div>
                 </div>
                 <div class="flex items-start">
@@ -75,6 +230,7 @@
                     <div>
                         <h3 class="font-semibold">Select Position</h3>
                         <p class="text-sm text-gray-600">Choose from available job openings</p>
+                        <p class="text-xs text-blue-600 mt-1">Matching agents prepare job requirement analysis</p>
                     </div>
                 </div>
                 <div class="flex items-start">
@@ -82,6 +238,7 @@
                     <div>
                         <h3 class="font-semibold">Find Matches</h3>
                         <p class="text-sm text-gray-600">AI analyzes and ranks candidates</p>
+                        <p class="text-xs text-blue-600 mt-1">Multiple agents collaborate for optimal rankings</p>
                     </div>
                 </div>
             </div>
@@ -91,24 +248,24 @@
         <div class="bg-white rounded-xl shadow-lg p-8 mb-8 card-hover">
             <div class="flex items-center mb-6">
                 <div class="step-number" id="step1">1</div>
-                <h2 class="text-2xl font-semibold text-gray-800">Upload Resume Files</h2>
+                <h2 class="text-2xl font-semibold text-gray-800">Upload PDF Resume Files</h2>
             </div>
             
-            <div class="bg-purple-50 border-2 border-dashed border-purple-300 rounded-xl p-10 text-center hover:bg-purple-100 transition-colors cursor-pointer"
+            <div class="bg-red-50 border-2 border-dashed border-red-300 rounded-xl p-10 text-center hover:bg-red-100 transition-colors cursor-pointer"
                  onclick="document.getElementById('resumeFiles').click()">
                 <div class="mb-4">
-                    <i class="fas fa-cloud-upload-alt text-6xl text-purple-400"></i>
+                    <i class="fas fa-file-pdf text-6xl text-red-400"></i>
                 </div>
-                <input type="file" id="resumeFiles" multiple accept=".pdf,.doc,.docx"
+                <input type="file" id="resumeFiles" multiple accept=".pdf"
                        class="hidden" onchange="handleFileSelect()">
-                <h3 class="text-lg font-semibold text-gray-800 mb-2">Click to Upload or Drag & Drop</h3>
-                <button class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300">
-                    <i class="fas fa-folder-open mr-2"></i>
-                    Browse Files
+                <h3 class="text-lg font-semibold text-gray-800 mb-2">Click to Upload PDF Resumes</h3>
+                <button class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300">
+                    <i class="fas fa-file-pdf mr-2"></i>
+                    Browse PDF Files
                 </button>
                 <p class="text-sm text-gray-500 mt-3">
                     <i class="fas fa-info-circle mr-1"></i>
-                    PDF, DOC, DOCX (Max 10MB each) • Multiple files supported
+                    PDF files only (Max 10MB each) • Multiple files supported
                 </p>
             </div>
 
@@ -118,16 +275,16 @@
                     <div>
                         <h4 class="font-semibold text-gray-800 mb-2">
                             <i class="fas fa-question-circle text-blue-600 mr-2"></i>
-                            Don't have resumes to test?
+                            Don't have PDF resumes to test?
                         </h4>
                         <p class="text-sm text-gray-600">
-                            Download our sample resume pack with 10 different candidate profiles
+                            Download our sample PDF resume pack with 10 different candidate profiles
                         </p>
                     </div>
                     <button onclick="downloadSampleResumes()" 
                             class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 flex items-center">
                         <i class="fas fa-download mr-2"></i>
-                        Download Test Data
+                        Download PDF Test Data
                     </button>
                 </div>
             </div>
@@ -135,8 +292,8 @@
             <!-- Upload Progress Section -->
             <div id="uploadProgressSection" class="mt-6 hidden">
                 <h3 class="text-lg font-semibold mb-4 text-gray-800">
-                    <i class="fas fa-cog fa-spin mr-2 text-purple-600"></i>
-                    Processing Resumes...
+                    <i class="fas fa-cog fa-spin mr-2 text-red-600"></i>
+                    Processing PDF Resumes...
                 </h3>
                 <div id="fileProgressList" class="space-y-3">
                     <!-- Individual file progress will be added here -->
@@ -261,15 +418,772 @@
             </div>
             <div id="candidatesList" class="space-y-4">
                 <div class="text-center py-12">
-                    <i class="fas fa-inbox text-6xl text-gray-300 mb-4"></i>
-                    <p class="text-gray-500">No candidates uploaded yet</p>
-                    <p class="text-gray-400 text-sm">Upload resume files to see extracted skills here</p>
+                    <i class="fas fa-file-pdf text-6xl text-gray-300 mb-4"></i>
+                    <p class="text-gray-500">No PDF resumes uploaded yet</p>
+                    <p class="text-gray-400 text-sm">Upload PDF resume files to see extracted skills here</p>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- ONLY load main.js -->
+    <!-- Agentic AI Architecture Overview -->
+    <section class="bg-gradient-to-r from-blue-50 to-purple-50 py-12 border-t border-blue-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-brain text-purple-600 mr-3"></i>
+                    Agentic AI Architecture
+                </h2>
+                <p class="text-xl text-gray-700 max-w-4xl mx-auto leading-relaxed">
+                    This HR hiring system demonstrates an <strong>agentic AI approach</strong> where multiple specialized AI agents work autonomously and collaboratively to process resumes and make hiring decisions. Each agent has specific responsibilities and can make independent decisions while contributing to the overall recruitment workflow.
+                </p>
+            </div>
+
+            <!-- Architecture Diagram -->
+			<!-- Improved Interactive Architecture Diagram -->
+			<div class="bg-white rounded-lg p-8 mb-12 shadow-lg border">
+			    <h3 class="text-2xl font-semibold text-gray-800 mb-6 text-center">AI Agent Architecture Flow</h3>
+			    
+			    <!-- SVG-based Professional Diagram -->
+			    <div class="relative max-w-5xl mx-auto">
+			        <svg viewBox="0 0 1200 700" class="w-full h-auto">
+			            <!-- Define gradients and filters -->
+			            <defs>
+			                <!-- Gradient definitions -->
+			                <linearGradient id="inputGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+			                    <stop offset="0%" style="stop-color:#ef4444;stop-opacity:0.8" />
+			                    <stop offset="100%" style="stop-color:#dc2626;stop-opacity:0.8" />
+			                </linearGradient>
+			                
+			                <linearGradient id="documentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+			                    <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0.8" />
+			                    <stop offset="100%" style="stop-color:#2563eb;stop-opacity:0.8" />
+			                </linearGradient>
+			                
+			                <linearGradient id="skillsGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+			                    <stop offset="0%" style="stop-color:#8b5cf6;stop-opacity:0.8" />
+			                    <stop offset="100%" style="stop-color:#7c3aed;stop-opacity:0.8" />
+			                </linearGradient>
+			                
+			                <linearGradient id="experienceGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+			                    <stop offset="0%" style="stop-color:#10b981;stop-opacity:0.8" />
+			                    <stop offset="100%" style="stop-color:#059669;stop-opacity:0.8" />
+			                </linearGradient>
+			                
+			                <linearGradient id="orchestratorGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+			                    <stop offset="0%" style="stop-color:#f59e0b;stop-opacity:0.8" />
+			                    <stop offset="100%" style="stop-color:#d97706;stop-opacity:0.8" />
+			                </linearGradient>
+			                
+			                <linearGradient id="matchingGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+			                    <stop offset="0%" style="stop-color:#ec4899;stop-opacity:0.8" />
+			                    <stop offset="100%" style="stop-color:#db2777;stop-opacity:0.8" />
+			                </linearGradient>
+			                
+			                <linearGradient id="rankingGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+			                    <stop offset="0%" style="stop-color:#6366f1;stop-opacity:0.8" />
+			                    <stop offset="100%" style="stop-color:#4f46e5;stop-opacity:0.8" />
+			                </linearGradient>
+			                
+			                <!-- Shadow filter -->
+			                <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+			                    <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+			                    <feOffset dx="2" dy="2" result="offsetblur"/>
+			                    <feComponentTransfer>
+			                        <feFuncA type="linear" slope="0.3"/>
+			                    </feComponentTransfer>
+			                    <feMerge> 
+			                        <feMergeNode/>
+			                        <feMergeNode in="SourceGraphic"/> 
+			                    </feMerge>
+			                </filter>
+			                
+			                <!-- Arrow marker -->
+			                <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+			                    <polygon points="0 0, 10 5, 0 10" fill="#6b7280"/>
+			                </marker>
+			            </defs>
+			            
+			            <!-- Background -->
+			            <rect x="0" y="0" width="1200" height="700" fill="#f9fafb" rx="10"/>
+			            
+			            <!-- Title -->
+			            <text x="600" y="40" text-anchor="middle" class="text-2xl font-bold fill-gray-800">Agentic AI Workflow</text>
+			            
+			            <!-- PDF Resume Input -->
+			            <g transform="translate(50, 300)">
+			                <rect x="0" y="0" width="180" height="100" rx="15" fill="url(#inputGradient)" filter="url(#shadow)"/>
+			                <rect x="10" y="10" width="160" height="80" rx="10" fill="white" opacity="0.9"/>
+			                <text x="90" y="40" text-anchor="middle" class="text-base font-bold fill-gray-800">PDF Resume</text>
+			                <text x="90" y="60" text-anchor="middle" class="text-sm fill-gray-600">Input Document</text>
+			                <text x="90" y="80" text-anchor="middle" class="text-xs fill-red-600">📄 User Upload</text>
+			            </g>
+			            
+			            <!-- Document Agent -->
+			            <g transform="translate(300, 100)">
+			                <rect x="0" y="0" width="200" height="120" rx="15" fill="url(#documentGradient)" filter="url(#shadow)"/>
+			                <rect x="10" y="10" width="180" height="100" rx="10" fill="white" opacity="0.9"/>
+			                <circle cx="100" cy="35" r="18" fill="#3b82f6"/>
+			                <text x="100" y="40" text-anchor="middle" class="text-sm font-bold fill-white">🤖</text>
+			                <text x="100" y="65" text-anchor="middle" class="text-base font-bold fill-gray-800">Document Agent</text>
+			                <text x="100" y="85" text-anchor="middle" class="text-xs fill-gray-600">AWS Textract OCR</text>
+			                <text x="100" y="100" text-anchor="middle" class="text-xs fill-blue-600">📝 Raw Text Output</text>
+			            </g>
+			            
+			            <!-- Skills Agent -->
+			            <g transform="translate(300, 290)">
+			                <rect x="0" y="0" width="200" height="120" rx="15" fill="url(#skillsGradient)" filter="url(#shadow)"/>
+			                <rect x="10" y="10" width="180" height="100" rx="10" fill="white" opacity="0.9"/>
+			                <circle cx="100" cy="35" r="18" fill="#8b5cf6"/>
+			                <text x="100" y="40" text-anchor="middle" class="text-sm font-bold fill-white">🧠</text>
+			                <text x="100" y="65" text-anchor="middle" class="text-base font-bold fill-gray-800">Skills Agent</text>
+			                <text x="100" y="85" text-anchor="middle" class="text-xs fill-gray-600">Amazon Bedrock</text>
+			                <text x="100" y="100" text-anchor="middle" class="text-xs fill-purple-600">🎯 Structured Skills</text>
+			            </g>
+			            
+			            <!-- Experience Agent -->
+			            <g transform="translate(300, 480)">
+			                <rect x="0" y="0" width="200" height="120" rx="15" fill="url(#experienceGradient)" filter="url(#shadow)"/>
+			                <rect x="10" y="10" width="180" height="100" rx="10" fill="white" opacity="0.9"/>
+			                <circle cx="100" cy="35" r="18" fill="#10b981"/>
+			                <text x="100" y="40" text-anchor="middle" class="text-sm font-bold fill-white">📊</text>
+			                <text x="100" y="65" text-anchor="middle" class="text-base font-bold fill-gray-800">Experience Agent</text>
+			                <text x="100" y="85" text-anchor="middle" class="text-xs fill-gray-600">Level Classification</text>
+			                <text x="100" y="100" text-anchor="middle" class="text-xs fill-green-600">📈 Experience Level</text>
+			            </g>
+			            
+			            <!-- Orchestrator Agent (Central) -->
+			            <g transform="translate(550, 250)">
+			                <rect x="0" y="0" width="220" height="200" rx="20" fill="url(#orchestratorGradient)" filter="url(#shadow)" stroke="#f59e0b" stroke-width="3"/>
+			                <rect x="15" y="15" width="190" height="170" rx="15" fill="white" opacity="0.95"/>
+			                <circle cx="110" cy="50" r="25" fill="#f59e0b"/>
+			                <text x="110" y="57" text-anchor="middle" class="text-lg font-bold fill-white">🎯</text>
+			                <text x="110" y="85" text-anchor="middle" class="text-lg font-bold fill-gray-800">Orchestrator</text>
+			                <text x="110" y="105" text-anchor="middle" class="text-base font-bold fill-gray-800">Agent</text>
+			                <text x="110" y="130" text-anchor="middle" class="text-xs fill-gray-600">Coordination & Decision</text>
+			                <text x="110" y="150" text-anchor="middle" class="text-xs fill-orange-600">🔄 Workflow Management</text>
+			                <text x="110" y="175" text-anchor="middle" class="text-xs font-semibold fill-orange-700">Intelligent Coordination</text>
+			            </g>
+			            
+			            <!-- Matching Agent -->
+			            <g transform="translate(850, 150)">
+			                <rect x="0" y="0" width="200" height="120" rx="15" fill="url(#matchingGradient)" filter="url(#shadow)"/>
+			                <rect x="10" y="10" width="180" height="100" rx="10" fill="white" opacity="0.9"/>
+			                <circle cx="100" cy="35" r="18" fill="#ec4899"/>
+			                <text x="100" y="40" text-anchor="middle" class="text-sm font-bold fill-white">🎯</text>
+			                <text x="100" y="65" text-anchor="middle" class="text-base font-bold fill-gray-800">Matching Agent</text>
+			                <text x="100" y="85" text-anchor="middle" class="text-xs fill-gray-600">Job-Candidate</text>
+			                <text x="100" y="100" text-anchor="middle" class="text-xs fill-pink-600">💼 Match Scores</text>
+			            </g>
+			            
+			            <!-- Ranking Agent -->
+			            <g transform="translate(850, 430)">
+			                <rect x="0" y="0" width="200" height="120" rx="15" fill="url(#rankingGradient)" filter="url(#shadow)"/>
+			                <rect x="10" y="10" width="180" height="100" rx="10" fill="white" opacity="0.9"/>
+			                <circle cx="100" cy="35" r="18" fill="#6366f1"/>
+			                <text x="100" y="40" text-anchor="middle" class="text-sm font-bold fill-white">🏆</text>
+			                <text x="100" y="65" text-anchor="middle" class="text-base font-bold fill-gray-800">Ranking Agent</text>
+			                <text x="100" y="85" text-anchor="middle" class="text-xs fill-gray-600">Score Optimization</text>
+			                <text x="100" y="100" text-anchor="middle" class="text-xs fill-indigo-600">🥇 Final Rankings</text>
+			            </g>
+			            
+			            <!-- Decision Output -->
+			            <g transform="translate(1100, 290)">
+			                <circle cx="50" cy="50" r="40" fill="#10b981" filter="url(#shadow)"/>
+			                <text x="50" y="45" text-anchor="middle" class="text-base font-bold fill-white">Decision</text>
+			                <text x="50" y="65" text-anchor="middle" class="text-sm font-bold fill-white">Output</text>
+			            </g>
+			            
+			            <!-- Animated flow arrows -->
+			            <g class="arrows">
+			                <!-- Input to agents -->
+			                <path d="M 230 350 L 290 160" stroke="#3b82f6" stroke-width="3" fill="none" marker-end="url(#arrowhead)" opacity="0.8">
+			                    <animate attributeName="stroke-dasharray" from="0 100" to="100 0" dur="2s" repeatCount="indefinite"/>
+			                </path>
+			                <path d="M 230 350 L 290 350" stroke="#8b5cf6" stroke-width="3" fill="none" marker-end="url(#arrowhead)" opacity="0.8">
+			                    <animate attributeName="stroke-dasharray" from="0 100" to="100 0" dur="2s" begin="0.2s" repeatCount="indefinite"/>
+			                </path>
+			                <path d="M 230 350 L 290 540" stroke="#10b981" stroke-width="3" fill="none" marker-end="url(#arrowhead)" opacity="0.8">
+			                    <animate attributeName="stroke-dasharray" from="0 100" to="100 0" dur="2s" begin="0.4s" repeatCount="indefinite"/>
+			                </path>
+			                
+			                <!-- Agents to orchestrator -->
+			                <path d="M 500 160 L 550 300" stroke="#f59e0b" stroke-width="3" fill="none" marker-end="url(#arrowhead)" opacity="0.8">
+			                    <animate attributeName="stroke-dasharray" from="0 100" to="100 0" dur="2s" begin="0.6s" repeatCount="indefinite"/>
+			                </path>
+			                <path d="M 500 350 L 550 350" stroke="#f59e0b" stroke-width="3" fill="none" marker-end="url(#arrowhead)" opacity="0.8">
+			                    <animate attributeName="stroke-dasharray" from="0 100" to="100 0" dur="2s" begin="0.8s" repeatCount="indefinite"/>
+			                </path>
+			                <path d="M 500 540 L 550 400" stroke="#f59e0b" stroke-width="3" fill="none" marker-end="url(#arrowhead)" opacity="0.8">
+			                    <animate attributeName="stroke-dasharray" from="0 100" to="100 0" dur="2s" begin="1s" repeatCount="indefinite"/>
+			                </path>
+			                
+			                <!-- Orchestrator to output agents -->
+			                <path d="M 770 300 L 840 210" stroke="#ec4899" stroke-width="3" fill="none" marker-end="url(#arrowhead)" opacity="0.8">
+			                    <animate attributeName="stroke-dasharray" from="0 100" to="100 0" dur="2s" begin="1.2s" repeatCount="indefinite"/>
+			                </path>
+			                <path d="M 770 400 L 840 490" stroke="#6366f1" stroke-width="3" fill="none" marker-end="url(#arrowhead)" opacity="0.8">
+			                    <animate attributeName="stroke-dasharray" from="0 100" to="100 0" dur="2s" begin="1.4s" repeatCount="indefinite"/>
+			                </path>
+			                
+			                <!-- Output agents to final -->
+			                <path d="M 1050 210 L 1100 300" stroke="#10b981" stroke-width="3" fill="none" marker-end="url(#arrowhead)" opacity="0.8">
+			                    <animate attributeName="stroke-dasharray" from="0 100" to="100 0" dur="2s" begin="1.6s" repeatCount="indefinite"/>
+			                </path>
+			                <path d="M 1050 490 L 1100 340" stroke="#10b981" stroke-width="3" fill="none" marker-end="url(#arrowhead)" opacity="0.8">
+			                    <animate attributeName="stroke-dasharray" from="0 100" to="100 0" dur="2s" begin="1.8s" repeatCount="indefinite"/>
+			                </path>
+			            </g>
+			            
+			            <!-- Labels -->
+			            <text x="140" y="280" text-anchor="middle" class="text-xs fill-blue-600 font-semibold">Document Processing</text>
+			            <text x="950" y="350" text-anchor="middle" class="text-xs fill-purple-600 font-semibold">Decision Output</text>
+			        </svg>
+			        
+			        <!-- Legend -->
+			        <div class="mt-8 bg-gray-50 rounded-lg p-4">
+			            <h4 class="text-sm font-semibold text-gray-700 mb-3">Process Flow</h4>
+			            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-xs">
+			                <div class="flex items-center">
+			                    <div class="w-4 h-4 bg-red-500 rounded mr-2"></div>
+			                    <span>1. Input</span>
+			                </div>
+			                <div class="flex items-center">
+			                    <div class="w-4 h-4 bg-blue-500 rounded mr-2"></div>
+			                    <span>2. Text Extraction</span>
+			                </div>
+			                <div class="flex items-center">
+			                    <div class="w-4 h-4 bg-purple-500 rounded mr-2"></div>
+			                    <span>3. Analysis</span>
+			                </div>
+			                <div class="flex items-center">
+			                    <div class="w-4 h-4 bg-orange-500 rounded mr-2"></div>
+			                    <span>4. Coordination</span>
+			                </div>
+			                <div class="flex items-center">
+			                    <div class="w-4 h-4 bg-green-500 rounded mr-2"></div>
+			                    <span>5. Output</span>
+			                </div>
+			            </div>
+			        </div>
+			    </div>
+			</div>
+
+			<style>
+			    /* Add custom animations */
+			    @keyframes flow {
+			        from {
+			            stroke-dashoffset: 100;
+			        }
+			        to {
+			            stroke-dashoffset: 0;
+			        }
+			    }
+			    
+			    .arrows path {
+			        stroke-dasharray: 5 5;
+			        animation: flow 2s linear infinite;
+			    }
+			</style>
+
+            <!-- Agent Capabilities Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
+                <div class="bg-white rounded-lg p-6 border-l-4 border-blue-500 shadow-lg hover:shadow-xl transition-shadow">
+                    <h4 class="text-lg font-semibold text-gray-800 mb-3">
+                        <i class="fas fa-eye text-blue-500 mr-2"></i>
+                        Document Processing Agent
+                    </h4>
+                    <ul class="text-sm text-gray-600 space-y-2">
+                        <li>• Autonomous PDF text extraction</li>
+                        <li>• Error handling & validation</li>
+                        <li>• Format standardization</li>
+                        <li>• Quality assessment</li>
+                    </ul>
+                </div>
+
+                <div class="bg-white rounded-lg p-6 border-l-4 border-purple-500 shadow-lg hover:shadow-xl transition-shadow">
+                    <h4 class="text-lg font-semibold text-gray-800 mb-3">
+                        <i class="fas fa-brain text-purple-500 mr-2"></i>
+                        Skills Analysis Agent
+                    </h4>
+                    <ul class="text-sm text-gray-600 space-y-2">
+                        <li>• NLP-powered skill extraction</li>
+                        <li>• Technical vs soft skill classification</li>
+                        <li>• Skill relevance scoring</li>
+                        <li>• Context-aware interpretation</li>
+                    </ul>
+                </div>
+
+                <div class="bg-white rounded-lg p-6 border-l-4 border-green-500 shadow-lg hover:shadow-xl transition-shadow">
+                    <h4 class="text-lg font-semibold text-gray-800 mb-3">
+                        <i class="fas fa-chart-line text-green-500 mr-2"></i>
+                        Experience Classification Agent
+                    </h4>
+                    <ul class="text-sm text-gray-600 space-y-2">
+                        <li>• Career progression analysis</li>
+                        <li>• Years of experience calculation</li>
+                        <li>• Role complexity assessment</li>
+                        <li>• Leadership indicator detection</li>
+                    </ul>
+                </div>
+
+                <div class="bg-white rounded-lg p-6 border-l-4 border-orange-500 shadow-lg hover:shadow-xl transition-shadow">
+                    <h4 class="text-lg font-semibold text-gray-800 mb-3">
+                        <i class="fas fa-cogs text-orange-500 mr-2"></i>
+                        Orchestrator Agent
+                    </h4>
+                    <ul class="text-sm text-gray-600 space-y-2">
+                        <li>• Workflow coordination</li>
+                        <li>• Agent communication management</li>
+                        <li>• Decision conflict resolution</li>
+                        <li>• Performance optimization</li>
+                    </ul>
+                </div>
+
+                <div class="bg-white rounded-lg p-6 border-l-4 border-pink-500 shadow-lg hover:shadow-xl transition-shadow">
+                    <h4 class="text-lg font-semibold text-gray-800 mb-3">
+                        <i class="fas fa-search text-pink-500 mr-2"></i>
+                        Matching Agent
+                    </h4>
+                    <ul class="text-sm text-gray-600 space-y-2">
+                        <li>• Job-candidate compatibility scoring</li>
+                        <li>• Multi-criteria decision analysis</li>
+                        <li>• Requirement gap identification</li>
+                        <li>• Weighted preference matching</li>
+                    </ul>
+                </div>
+
+                <div class="bg-white rounded-lg p-6 border-l-4 border-indigo-500 shadow-lg hover:shadow-xl transition-shadow">
+                    <h4 class="text-lg font-semibold text-gray-800 mb-3">
+                        <i class="fas fa-trophy text-indigo-500 mr-2"></i>
+                        Ranking Agent
+                    </h4>
+                    <ul class="text-sm text-gray-600 space-y-2">
+                        <li>• Dynamic score optimization</li>
+                        <li>• Contextual ranking algorithms</li>
+                        <li>• Bias detection & mitigation</li>
+                        <li>• Explainable AI recommendations</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Key Benefits of Agentic Approach -->
+            <div class="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-8 border border-green-200 shadow-lg">
+                <h3 class="text-2xl font-semibold text-gray-800 mb-6 text-center">
+                    <i class="fas fa-lightbulb text-yellow-500 mr-2"></i>
+                    Why Agentic AI?
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="bg-white rounded-lg p-6 shadow-sm">
+                        <h4 class="text-lg font-medium text-gray-800 mb-3">🎯 Autonomous Decision Making</h4>
+                        <p class="text-gray-600">Each agent makes independent decisions within its domain of expertise, reducing bottlenecks and improving processing speed.</p>
+                    </div>
+                    <div class="bg-white rounded-lg p-6 shadow-sm">
+                        <h4 class="text-lg font-medium text-gray-800 mb-3">🔄 Scalable Architecture</h4>
+                        <p class="text-gray-600">Agents can be scaled independently based on workload, allowing optimal resource allocation and system performance.</p>
+                    </div>
+                    <div class="bg-white rounded-lg p-6 shadow-sm">
+                        <h4 class="text-lg font-medium text-gray-800 mb-3">🛠️ Specialized Expertise</h4>
+                        <p class="text-gray-600">Each agent is optimized for specific tasks, leading to higher accuracy and better outcomes than monolithic systems.</p>
+                    </div>
+                    <div class="bg-white rounded-lg p-6 shadow-sm">
+                        <h4 class="text-lg font-medium text-gray-800 mb-3">🔍 Explainable Results</h4>
+                        <p class="text-gray-600">Agent-based decisions provide clear audit trails and explanations for hiring recommendations and scoring.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Bottom Navigation Footer -->
+    <footer class="bg-white border-t mt-12" role="contentinfo">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <!-- Back to Portfolio Button - Bottom -->
+            <div class="text-center mb-8">
+                <a href="https://somdip.dev" 
+                   class="nav-back-btn inline-flex items-center px-6 py-3 rounded-lg text-white font-medium text-lg shadow-lg"
+                   aria-label="Return to Somdip Roy's main portfolio website">
+                    <i class="fas fa-arrow-left mr-3"></i>
+                    Back to Somdip.dev Portfolio
+                </a>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div>
+                    <h4 class="font-semibold text-gray-900 mb-3">About This Demo</h4>
+                    <p class="text-sm text-gray-600">
+                        Built with Spring Boot, AWS AI services, and modern web technologies. 
+                        Demonstrates practical AI applications for PDF resume processing and recruitment automation.
+                    </p>
+                </div>
+                <div>
+                    <h4 class="font-semibold text-gray-900 mb-3">Technologies Used</h4>
+                    <ul class="text-sm text-gray-600 space-y-1">
+                        <li>• Amazon Textract for PDF OCR processing</li>
+                        <li>• Amazon Bedrock for AI analysis</li>
+                        <li>• AWS S3 for secure PDF storage</li>
+                        <li>• Spring Boot backend framework</li>
+                        <li>• Thymeleaf templating engine</li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="font-semibold text-gray-900 mb-3">Connect with Somdip</h4>
+                    <div class="flex space-x-4">
+                        <a href="https://somdip.dev" class="text-gray-600 hover:text-blue-600">
+                            <i class="fas fa-globe"></i> Portfolio
+                        </a>
+                        <a href="https://linkedin.com/in/somdiproy" class="text-gray-600 hover:text-blue-600" target="_blank" rel="noopener">
+                            <i class="fab fa-linkedin"></i> LinkedIn
+                        </a>
+                        <a href="https://github.com/somdiproy" class="text-gray-600 hover:text-blue-600" target="_blank" rel="noopener">
+                            <i class="fab fa-github"></i> GitHub
+                        </a>
+                        <a href="https://somdip.dev/contact" class="text-gray-600 hover:text-blue-600">
+                            <i class="fas fa-envelope"></i> Contact
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="border-t pt-6 mt-6 text-center">
+                <p class="text-sm text-gray-600">
+                    © 2025 Somdip Roy. This is a demonstration application showcasing AI-powered PDF resume processing technology.
+                    <br>
+                    <span class="text-xs text-gray-500 mt-1 block">
+                        Built with AWS S3, Amazon Textract, Amazon Bedrock, and Spring Boot
+                    </span>
+                </p>
+            </div>
+        </div>
+		<!-- Session Management Modal -->
+		<div id="sessionModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+		    <div class="flex items-center justify-center min-h-screen p-4">
+		        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full mx-auto">
+		            
+		            <!-- Email Entry Step -->
+		            <div id="emailStep" class="p-8">
+		                <div class="text-center mb-6">
+		                    <div class="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+		                        <i class="fas fa-envelope text-purple-600 text-2xl"></i>
+		                    </div>
+		                    <h2 class="text-2xl font-bold text-gray-800 mb-2">Start Your Demo Session</h2>
+		                    <p class="text-gray-600">Please enter your email to begin the AI-powered resume screening demo</p>
+		                </div>
+		                
+		                <form id="emailForm">
+		                    <div class="mb-4">
+		                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+		                            <i class="fas fa-envelope mr-2 text-purple-600"></i>
+		                            Email Address
+		                        </label>
+		                        <input type="email" id="emailInput" 
+		                               class="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+		                               placeholder="your.email@company.com" required>
+		                    </div>
+		                    
+		                    <button type="submit" id="requestCodeBtn" 
+		                            class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300">
+		                        <i class="fas fa-paper-plane mr-2"></i>
+		                        Send Verification Code
+		                    </button>
+		                </form>
+		                
+		                <!-- NEW: Option to read about architecture -->
+		                <div class="mt-6 pt-6 border-t border-gray-200">
+		                    <div class="text-center">
+		                        <p class="text-sm text-gray-600 mb-3">Want to learn about our AI architecture first?</p>
+		                        <button onclick="SessionManager.showArchitectureInfo()" 
+		                                class="text-purple-600 hover:text-purple-700 font-medium text-sm">
+		                            <i class="fas fa-info-circle mr-1"></i>
+		                            Read About Our Agentic AI System
+		                        </button>
+		                    </div>
+		                </div>
+		                
+		               
+		            </div>
+		            
+		            <!-- Verification Step -->
+		            <div id="verificationStep" class="p-8 hidden">
+		                <div class="text-center mb-6">
+		                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+		                        <i class="fas fa-shield-alt text-green-600 text-2xl"></i>
+		                    </div>
+		                    <h2 class="text-2xl font-bold text-gray-800 mb-2">Enter Verification Code</h2>
+		                    <p class="text-gray-600">We've sent a 6-digit code to <span id="emailDisplay" class="font-semibold"></span></p>
+		                </div>
+		                
+		                <form id="verificationForm">
+		                    <div class="mb-4">
+		                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+		                            <i class="fas fa-key mr-2 text-green-600"></i>
+		                            Verification Code
+		                        </label>
+		                        <input type="text" id="codeInput" 
+		                               class="w-full p-3 border-2 border-gray-300 rounded-lg text-center text-lg font-mono focus:ring-2 focus:ring-green-500 focus:border-green-500"
+		                               placeholder="123456" maxlength="6" required>
+		                    </div>
+		                    
+		                    <div class="flex space-x-3">
+		                        <button type="button" id="backToEmailBtn" 
+		                                class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 px-4 rounded-lg transition duration-300">
+		                            <i class="fas fa-arrow-left mr-2"></i>
+		                            Back
+		                        </button>
+		                        <button type="submit" id="verifyCodeBtn" 
+		                                class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300">
+		                            <i class="fas fa-check mr-2"></i>
+		                            Verify
+		                        </button>
+		                    </div>
+		                </form>
+		                
+		                <div class="text-center mt-4">
+		                    <button id="resendCodeBtn" class="text-purple-600 hover:text-purple-700 text-sm font-medium">
+		                        <i class="fas fa-refresh mr-1"></i>
+		                        Resend Code
+		                    </button>
+		                </div>
+		            </div>
+		            
+		            <!-- NEW: Architecture Info Step -->
+					<!-- Architecture Info Step -->
+					<div id="architectureInfoStep" class="p-8 hidden max-h-[80vh] overflow-y-auto">
+					    <div class="text-center mb-6">
+					        <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+					            <i class="fas fa-brain text-blue-600 text-2xl"></i>
+					        </div>
+					        <h2 class="text-2xl font-bold text-gray-800 mb-2">About Our Agentic AI System</h2>
+					    </div>
+					    
+					    <div class="space-y-6">
+					        <!-- How It Works -->
+					        <div class="bg-blue-50 rounded-lg p-4">
+					            <h3 class="font-semibold text-gray-800 mb-2 flex items-center">
+					                <i class="fas fa-cogs text-blue-600 mr-2"></i>
+					                How It Works
+					            </h3>
+					            <ol class="text-sm text-gray-600 space-y-2">
+					                <li>1. Upload PDF resumes (multiple files supported)</li>
+					                <li>2. AI agents extract text using AWS Textract</li>
+					                <li>3. Amazon Bedrock analyzes skills and experience</li>
+					                <li>4. Select a job position for matching</li>
+					                <li>5. Get ranked candidates with match scores</li>
+					            </ol>
+					        </div>
+					        
+					        <!-- Data Retention -->
+					        <div class="bg-yellow-50 rounded-lg p-4">
+					            <h3 class="font-semibold text-gray-800 mb-2 flex items-center">
+					                <i class="fas fa-database text-yellow-600 mr-2"></i>
+					                Data Retention Policy
+					            </h3>
+					            <p class="text-sm text-gray-600">
+					                Your uploaded data is stored securely for <strong>6 months</strong> for demonstration purposes. 
+					                All data is encrypted and stored in AWS S3 with strict access controls.
+					            </p>
+					        </div>
+					        
+					        <!-- Agentic AI Overview -->
+					        <div class="bg-purple-50 rounded-lg p-4">
+					            <h3 class="font-semibold text-gray-800 mb-2 flex items-center">
+					                <i class="fas fa-robot text-purple-600 mr-2"></i>
+					                Agentic AI Architecture
+					            </h3>
+					            <p class="text-sm text-gray-600 mb-2">
+					                Our system uses multiple specialized AI agents that work autonomously:
+					            </p>
+					            <ul class="text-sm text-gray-600 space-y-1">
+					                <li>• <strong>Document Agent:</strong> PDF text extraction</li>
+					                <li>• <strong>Skills Agent:</strong> AI-powered skill analysis</li>
+					                <li>• <strong>Experience Agent:</strong> Level classification</li>
+					                <li>• <strong>Orchestrator:</strong> Workflow coordination</li>
+					                <li>• <strong>Matching & Ranking Agents:</strong> Candidate scoring</li>
+					            </ul>
+					        </div>
+					        
+					        <!-- Why Agentic AI -->
+					        <div class="bg-green-50 rounded-lg p-4">
+					            <h3 class="font-semibold text-gray-800 mb-2 flex items-center">
+					                <i class="fas fa-lightbulb text-green-600 mr-2"></i>
+					                Why Agentic AI?
+					            </h3>
+					            <ul class="text-sm text-gray-600 space-y-1">
+					                <li>✓ Autonomous decision making</li>
+					                <li>✓ Scalable architecture</li>
+					                <li>✓ Specialized expertise per agent</li>
+					                <li>✓ Explainable AI results</li>
+					            </ul>
+					        </div>
+					    </div>
+					    
+					    <div class="mt-6">
+					        <button onclick="SessionManager.hideArchitectureInfo()" 
+					                class="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg transition duration-300">
+					            <i class="fas fa-arrow-left mr-2"></i>
+					            Back to Email Entry
+					        </button>
+					    </div>
+					</div>
+		            
+		            <!-- Session Active Step -->
+					<!-- Session Active Step with Queue Info -->
+					<div id="sessionActiveStep" class="p-8 hidden">
+					    <div class="text-center mb-6">
+					        <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+					            <i class="fas fa-clock text-blue-600 text-2xl"></i>
+					        </div>
+					        <h2 class="text-2xl font-bold text-gray-800 mb-2">Demo Session Active</h2>
+					        <p class="text-gray-600">Another user is currently using the demo</p>
+					    </div>
+					    
+					    <div class="bg-blue-50 rounded-lg p-4 mb-6">
+					        <div class="text-center">
+					            <p class="text-blue-800 font-semibold">Current User: <span id="currentUserEmail"></span></p>
+					            <div class="mt-3">
+					                <div class="text-3xl font-bold text-blue-600" id="remainingTime">7:00</div>
+					                <div class="text-sm text-blue-600">Time Remaining</div>
+					            </div>
+					        </div>
+					    </div>
+					    
+					    <!-- NEW: Queue Information -->
+					    <div id="queueInfo" class="bg-orange-50 rounded-lg p-4 mb-6 border border-orange-200">
+					        <h3 class="text-center font-semibold text-gray-800 mb-3">
+					            <i class="fas fa-users mr-2 text-orange-600"></i>
+					            Waiting Queue Status
+					        </h3>
+					        
+					        <div id="queueStats" class="text-center mb-3">
+					            <div class="text-2xl font-bold text-orange-600">
+					                <span id="queueLength">0</span> users waiting
+					            </div>
+					            <div class="text-sm text-gray-600 mt-1">
+					                Estimated wait: <span id="estimatedWait" class="font-semibold">calculating...</span>
+					            </div>
+					        </div>
+					        
+					        <div id="waitingList" class="space-y-2">
+					            <!-- Dynamically populated -->
+					        </div>
+					        
+					        <div class="mt-3 text-center">
+					            <button onclick="SessionManager.joinQueue()" 
+					                    class="bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded-lg text-sm transition duration-300">
+					                <i class="fas fa-user-plus mr-2"></i>
+					                Join Waiting Queue
+					            </button>
+					        </div>
+					    </div>
+					    
+					    <div class="text-center">
+					        <p class="text-gray-600 mb-4">You'll be notified when it's your turn</p>
+					        <button id="refreshStatusBtn" 
+					                class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300">
+					            <i class="fas fa-refresh mr-2"></i>
+					            Refresh Status
+					        </button>
+					    </div>
+					    
+					    <!-- Option to read architecture while waiting -->
+					    <div class="mt-6 pt-6 border-t border-gray-200">
+					        <div class="text-center">
+					            <button onclick="SessionManager.showArchitectureInfo()" 
+					                    class="text-blue-600 hover:text-blue-700 font-medium text-sm">
+					                <i class="fas fa-info-circle mr-1"></i>
+					                Learn About Our System While Waiting
+					            </button>
+					        </div>
+					    </div>
+					</div>
+		            
+		            <!-- Success Step -->
+					<!-- Success Step -->
+					<div id="successStep" class="p-8 hidden">
+					    <div class="text-center mb-6">
+					        <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+					            <i class="fas fa-check-circle text-green-600 text-2xl"></i>
+					        </div>
+					        <h2 class="text-2xl font-bold text-gray-800 mb-2">Session Started!</h2>
+					        <p class="text-gray-600">You now have exclusive access to upload and process resumes</p>
+					    </div>
+					    
+					    <div class="bg-green-50 rounded-lg p-4 mb-6 border border-green-200">
+					        <div class="text-center">
+					            <div class="text-2xl font-bold text-green-600" id="sessionTimer">7:00</div>
+					            <div class="text-sm text-green-600">Session Time Remaining</div>
+					            <div class="mt-2">
+					                <span class="text-xs bg-green-200 text-green-800 px-3 py-1 rounded-full">
+					                    Session ID: <span id="sessionIdDisplay"></span>
+					                </span>
+					            </div>
+					        </div>
+					    </div>
+					    
+					    <!-- Data Retention Notice -->
+					    <div class="bg-blue-50 rounded-lg p-3 mb-4 text-center">
+					        <p class="text-xs text-blue-700">
+					            <i class="fas fa-info-circle mr-1"></i>
+					            Your data will be retained for 6 months for demo purposes
+					        </p>
+					    </div>
+					    
+					    <button id="startDemoBtn" 
+					            class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300">
+					        <i class="fas fa-play mr-2"></i>
+					        Start Demo
+					    </button>
+					</div>
+		            
+		            <!-- Error Step -->
+		            <div id="errorStep" class="p-8 hidden">
+		                <div class="text-center mb-6">
+		                    <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+		                        <i class="fas fa-exclamation-triangle text-red-600 text-2xl"></i>
+		                    </div>
+		                    <h2 class="text-2xl font-bold text-gray-800 mb-2">Oops!</h2>
+		                    <p class="text-gray-600" id="errorMessage">Something went wrong</p>
+		                </div>
+		                
+		                <button id="tryAgainBtn" 
+		                        class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300">
+		                    <i class="fas fa-redo mr-2"></i>
+		                    Try Again
+		                </button>
+		            </div>
+		        </div>
+		    </div>
+		</div>
+
+		<!-- Session Timer Display (Fixed Position) -->
+		<div id="sessionTimerDisplay" class="fixed top-20 right-4 bg-white rounded-lg shadow-lg p-4 z-40 hidden border-l-4 border-green-500">
+		    <div class="flex items-center space-x-3">
+		        <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+		            <i class="fas fa-clock text-green-600"></i>
+		        </div>
+		        <div>
+		            <div class="text-sm font-semibold text-gray-700">Session Active</div>
+		            <div class="text-lg font-bold text-green-600" id="topTimerDisplay">7:00</div>
+		        </div>
+		        <button id="endSessionBtn" class="text-red-600 hover:text-red-700 text-sm">
+		            <i class="fas fa-times"></i>
+		        </button>
+		    </div>
+		</div>
+
+		<!-- Session Expired Notice -->
+		<div id="sessionExpiredNotice" class="fixed top-20 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-white rounded-lg shadow-lg p-4 z-50 hidden">
+		    <div class="flex items-center space-x-3">
+		        <i class="fas fa-hourglass-end text-2xl"></i>
+		        <div>
+		            <div class="font-bold">Session Expired</div>
+		            <div class="text-sm">Your demo session has ended. The page will refresh automatically.</div>
+		        </div>
+		    </div>
+		</div>
+    </footer>
+
+    <!-- Load your main.js -->
     <script th:src="@{/js/main.js}"></script>
 </body>
 </html>

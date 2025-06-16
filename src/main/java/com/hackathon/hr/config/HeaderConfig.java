@@ -5,19 +5,31 @@ import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
-
 import javax.servlet.*;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import javax.annotation.PostConstruct;
 
 @Configuration
 public class HeaderConfig {
     
-    @Value("${security.headers.content.security.policy}")
+    private static final Logger logger = LoggerFactory.getLogger(HeaderConfig.class);
+    
+    // Read from environment variable first, then fall back to property
+    @Value("${SECURITY_HEADERS_CONTENT_SECURITY_POLICY:${security.headers.content.security.policy:frame-ancestors 'self' https://somdip.dev https://www.somdip.dev http://localhost:8080 http://localhost:8081;}}")
     private String contentSecurityPolicy;
     
     @Value("${iframe.embedding.enabled:true}")
     private boolean iframeEmbeddingEnabled;
+    
+    @PostConstruct
+    public void logConfiguration() {
+        logger.info("Security Headers Configuration:");
+        logger.info("  Content-Security-Policy: {}", contentSecurityPolicy);
+        logger.info("  iFrame embedding enabled: {}", iframeEmbeddingEnabled);
+    }
     
     @Bean
     public FilterRegistrationBean<HeaderFilter> headerFilterRegistration() {
@@ -30,6 +42,8 @@ public class HeaderConfig {
     }
     
     public static class HeaderFilter implements Filter {
+        
+        private static final Logger logger = LoggerFactory.getLogger(HeaderFilter.class);
         
         private final String contentSecurityPolicy;
         private final boolean iframeEmbeddingEnabled;
@@ -70,12 +84,12 @@ public class HeaderConfig {
         
         @Override
         public void init(FilterConfig filterConfig) throws ServletException {
-            // Initialization if needed
+            logger.debug("HeaderFilter initialized");
         }
         
         @Override
         public void destroy() {
-            // Cleanup if needed
+            logger.debug("HeaderFilter destroyed");
         }
     }
 }
