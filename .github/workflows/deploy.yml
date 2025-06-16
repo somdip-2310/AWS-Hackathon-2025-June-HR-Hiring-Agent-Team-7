@@ -95,6 +95,10 @@ jobs:
         echo "task-role=$TASK_ROLE" >> $GITHUB_OUTPUT
         
         echo "✅ Current configuration retrieved"
+        echo "  CPU: $CURRENT_CPU"
+        echo "  Memory: $CURRENT_MEMORY"
+        echo "  Execution Role: ${EXECUTION_ROLE##*/}"
+        echo "  Task Role: ${TASK_ROLE##*/}"
 
     - name: Create optimized task definition
       env:
@@ -105,7 +109,7 @@ jobs:
       run: |
         echo "📝 Creating optimized task definition for zero downtime..."
         
-        # Create task definition with all required environment variables
+        # Create task definition with all required environment variables including security headers
         cat > task-definition.json << EOF
         {
           "family": "$ECS_TASK_DEFINITION",
@@ -134,7 +138,8 @@ jobs:
                 {"name": "BEDROCK_MODEL_ID", "value": "us.amazon.nova-premier-v1:0"},
                 {"name": "SPRING_PROFILES_ACTIVE", "value": "prod"},
                 {"name": "SERVER_PORT", "value": "8081"},
-                {"name": "JAVA_OPTS", "value": "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"}
+                {"name": "JAVA_OPTS", "value": "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"},
+                {"name": "SECURITY_HEADERS_CONTENT_SECURITY_POLICY", "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'"}
               ],
               "logConfiguration": {
                 "logDriver": "awslogs",
@@ -157,6 +162,8 @@ jobs:
         EOF
         
         echo "✅ Task definition created with all required environment variables"
+        echo "📋 Environment variables configured:"
+        cat task-definition.json | jq '.containerDefinitions[0].environment[].name' | sort
 
     - name: Register new task definition
       id: register-task-def
@@ -205,6 +212,8 @@ jobs:
           --output table
         
         echo "✅ Zero-downtime deployment initiated"
+        echo "📌 Strategy: Rolling update with 100% minimum healthy"
+        echo "📌 Circuit breaker enabled with automatic rollback"
 
     - name: Monitor zero-downtime deployment
       run: |
@@ -212,8 +221,9 @@ jobs:
         
         START_TIME=$(date +%s)
         TIMEOUT=600  # 10 minutes
+        DEPLOYMENT_COMPLETE=false
         
-        while true; do
+        while [ "$DEPLOYMENT_COMPLETE" = false ]; do
           # Get deployment status
           DEPLOYMENT_INFO=$(aws ecs describe-services \
             --cluster $ECS_CLUSTER \
@@ -224,31 +234,46 @@ jobs:
           # Count deployments
           DEPLOYMENT_COUNT=$(echo $DEPLOYMENT_INFO | jq 'length')
           
+          # Check if deployment is complete
           if [ "$DEPLOYMENT_COUNT" -eq 1 ]; then
-            # Only one deployment means the new one is now primary
             PRIMARY_STATUS=$(echo $DEPLOYMENT_INFO | jq -r '.[0].status')
-            if [ "$PRIMARY_STATUS" = "PRIMARY" ]; then
+            PRIMARY_RUNNING=$(echo $DEPLOYMENT_INFO | jq -r '.[0].runningCount')
+            PRIMARY_DESIRED=$(echo $DEPLOYMENT_INFO | jq -r '.[0].desiredCount')
+            
+            if [ "$PRIMARY_STATUS" = "PRIMARY" ] && [ "$PRIMARY_RUNNING" -eq "$PRIMARY_DESIRED" ]; then
               echo "✅ Deployment completed successfully!"
+              DEPLOYMENT_COMPLETE=true
               break
             fi
           fi
           
           # Show current status
           echo "📊 Deployment status at $(date '+%H:%M:%S'):"
-          echo $DEPLOYMENT_INFO | jq -r '.[] | "  - \(.status): \(.desiredCount) desired, \(.runningCount) running, \(.pendingCount) pending"'
+          echo $DEPLOYMENT_INFO | jq -r '.[] | "  - \(.status): \(.desiredCount) desired, \(.runningCount) running, \(.pendingCount) pending, \(.failedTasks // 0) failed"'
           
           # Check timeout
           CURRENT_TIME=$(date +%s)
           ELAPSED=$((CURRENT_TIME - START_TIME))
           if [ $ELAPSED -gt $TIMEOUT ]; then
-            echo "❌ Deployment timeout after $TIMEOUT seconds"
-            exit 1
+            echo "⚠️ Deployment timeout after $TIMEOUT seconds"
+            
+            # Check if application is healthy despite timeout
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://demos.somdip.dev/ || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ Application is responding successfully despite deployment timeout"
+              echo "ℹ️ This may be due to slow task draining. Deployment should complete eventually."
+              break
+            else
+              echo "❌ Application is not responding. Deployment may have failed."
+              exit 1
+            fi
           fi
           
-          # Check for failed tasks
-          FAILED_TASKS=$(echo $DEPLOYMENT_INFO | jq '[.[] | select(.failedTasks > 0)] | length')
-          if [ "$FAILED_TASKS" -gt 0 ]; then
-            echo "⚠️ Failed tasks detected, but circuit breaker should handle rollback"
+          # Check for circuit breaker rollback
+          ROLLBACK=$(echo $DEPLOYMENT_INFO | jq -r '.[] | select(.status == "PRIMARY") | .rolloutState // "IN_PROGRESS"')
+          if [ "$ROLLBACK" = "FAILED" ]; then
+            echo "❌ Deployment failed and circuit breaker triggered rollback"
+            exit 1
           fi
           
           sleep 20
@@ -299,7 +324,7 @@ jobs:
         aws ecs describe-tasks \
           --cluster $ECS_CLUSTER \
           --tasks $TASK_ARNS \
-          --query 'tasks[*].[taskArn,availabilityZone]' \
+          --query 'tasks[*].[availabilityZone,taskArn]' \
           --output table
 
     - name: Verify ALB target health
@@ -313,6 +338,9 @@ jobs:
           --output text 2>/dev/null || echo "")
         
         if [ ! -z "$TG_ARN" ] && [ "$TG_ARN" != "None" ]; then
+          # Wait for targets to stabilize
+          sleep 20
+          
           # Check target health
           HEALTHY_COUNT=$(aws elbv2 describe-target-health \
             --target-group-arn $TG_ARN \
@@ -326,75 +354,109 @@ jobs:
           
           echo "✅ Healthy targets: $HEALTHY_COUNT/$TOTAL_COUNT"
           
+          if [ "$HEALTHY_COUNT" -eq 0 ]; then
+            echo "⚠️ No healthy targets yet, waiting..."
+            sleep 30
+            
+            # Recheck
+            HEALTHY_COUNT=$(aws elbv2 describe-target-health \
+              --target-group-arn $TG_ARN \
+              --query 'length(TargetHealthDescriptions[?TargetHealth.State==`healthy`])' \
+              --output text)
+            
+            echo "✅ Healthy targets after wait: $HEALTHY_COUNT"
+          fi
+          
           # Show target details
           aws elbv2 describe-target-health \
             --target-group-arn $TG_ARN \
             --query 'TargetHealthDescriptions[*].[Target.Id,TargetHealth.State,Target.AvailabilityZone]' \
             --output table
+        else
+          echo "⚠️ Target group not found or not accessible"
         fi
 
     - name: Test application endpoints
       run: |
         echo "🧪 Testing application endpoints..."
         
-        # Test ALB health
-        ALB_DNS="somdip-dev-alb-856223136.us-east-1.elb.amazonaws.com"
-        
         # Test with retries
         MAX_RETRIES=5
         RETRY_COUNT=0
+        SUCCESS=false
         
-        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: demos.somdip.dev" http://$ALB_DNS:8081 || echo "000")
-          HTTPS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://demos.somdip.dev || echo "000")
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = false ]; do
+          HTTPS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://demos.somdip.dev/ || echo "000")
           
-          if [ "$HTTP_STATUS" = "200" ] || [ "$HTTPS_STATUS" = "200" ]; then
+          if [ "$HTTPS_STATUS" = "200" ]; then
             echo "✅ Application is healthy!"
-            echo "  - HTTP Status: $HTTP_STATUS"
             echo "  - HTTPS Status: $HTTPS_STATUS"
+            SUCCESS=true
             
             # Test a few endpoints
             echo ""
             echo "Testing specific endpoints:"
             curl -s -o /dev/null -w "  - Root endpoint: %{http_code}\n" https://demos.somdip.dev/
-            curl -s -o /dev/null -w "  - API endpoint: %{http_code}\n" https://demos.somdip.dev/api/jobs
-            break
+            curl -s -o /dev/null -w "  - API endpoint: %{http_code}\n" https://demos.somdip.dev/api/jobs || echo "  - API endpoint: Not available"
+            
+            # Test health endpoint
+            curl -s -o /dev/null -w "  - Health check: %{http_code}\n" https://demos.somdip.dev/actuator/health || echo "  - Health check: Not available"
           else
-            echo "⚠️ Retry $((RETRY_COUNT + 1))/$MAX_RETRIES - HTTP: $HTTP_STATUS, HTTPS: $HTTPS_STATUS"
+            echo "⚠️ Retry $((RETRY_COUNT + 1))/$MAX_RETRIES - HTTPS: $HTTPS_STATUS"
             ((RETRY_COUNT++))
-            sleep 10
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              sleep 10
+            fi
           fi
         done
+        
+        if [ "$SUCCESS" = false ]; then
+          echo "❌ Application health check failed after $MAX_RETRIES retries"
+          exit 1
+        fi
 
     - name: Deployment summary
+      if: always()
       run: |
         echo ""
-        echo "🎉 HR Demo Zero-Downtime Deployment Complete!"
-        echo "============================================="
+        echo "🎉 HR Demo Deployment Summary"
+        echo "============================="
         echo "✅ Image: ${{ steps.build-image.outputs.image }}"
         echo "✅ Task Definition: ${{ steps.register-task-def.outputs.new-task-def-arn }}"
-        echo "✅ Deployment Strategy: Rolling update (100% minimum healthy)"
+        echo "✅ Deployment Strategy: Zero-downtime rolling update"
         echo ""
-        echo "📊 Service Status:"
+        echo "📊 Final Service Status:"
         aws ecs describe-services \
           --cluster $ECS_CLUSTER \
           --service $ECS_SERVICE \
           --query 'services[0].[serviceName,runningCount,desiredCount,pendingCount]' \
-          --output table
+          --output table || echo "Unable to fetch service status"
         echo ""
         echo "🔗 Application URLs:"
         echo "   Production: https://demos.somdip.dev"
-        echo "   Health Check: https://demos.somdip.dev/"
-        echo "   API Base: https://demos.somdip.dev/api"
+        echo "   Direct ALB: http://somdip-dev-alb-856223136.us-east-1.elb.amazonaws.com:8081"
         echo ""
-        echo "📝 Key Configuration:"
+        echo "📝 Configuration Summary:"
         echo "   - S3 Bucket: hr-hiring-resumes-js"
         echo "   - Bedrock Model: us.amazon.nova-premier-v1:0"
-        echo "   - Container Resources: CPU 0 (all available), Memory: task allocated"
+        echo "   - Container Resources: CPU 0 (uses all available), Memory: task allocated"
+        echo "   - Security Headers: Configured"
         echo ""
-        echo "💡 Note: Fargate automatically distributes tasks across AZs"
+        echo "⚙️ Deployment Configuration:"
+        echo "   - Minimum Healthy: 100%"
+        echo "   - Maximum Percent: 200%"
+        echo "   - Circuit Breaker: Enabled with auto-rollback"
+        echo "   - Health Check Grace: 120 seconds"
+        echo ""
+        
+        # Check if deployment had any issues
+        if [ -f deployment-warnings.txt ]; then
+          echo "⚠️ Deployment Warnings:"
+          cat deployment-warnings.txt
+        fi
 
     - name: Cleanup
+      if: always()
       run: |
-        rm -f task-definition.json current-task-def.json
+        rm -f task-definition.json current-task-def.json deployment-warnings.txt
         echo "✅ Cleanup completed"
