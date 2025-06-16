@@ -1,5 +1,5 @@
 # .github/workflows/deploy.yml
-# Optimized CI/CD workflow for HR Demo Service with faster deployments
+# Optimized CI/CD workflow for HR Demo Service
 
 name: Deploy HR Demo to AWS ECS
 
@@ -25,7 +25,7 @@ jobs:
   deploy:
     name: Build and Deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     
     steps:
     - name: Checkout code
@@ -93,50 +93,99 @@ jobs:
         task-definition: ${{ steps.task-def.outputs.task-definition }}
         service: ${{ env.ECS_SERVICE }}
         cluster: ${{ env.ECS_CLUSTER }}
-        wait-for-service-stability: true
-        wait-for-minutes: 5
+        wait-for-service-stability: false
+
+    - name: Wait for service stability with monitoring
+      run: |
+        echo "⏳ Waiting for service to stabilize..."
+        
+        # Custom wait logic
+        MAX_ATTEMPTS=20
+        ATTEMPT=0
+        
+        while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+          ATTEMPT=$((ATTEMPT + 1))
+          echo "🔄 Check $ATTEMPT/$MAX_ATTEMPTS..."
+          
+          # Get deployment status
+          DEPLOYMENT_INFO=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].deployments[?status==`PRIMARY`]' \
+            --output json)
+          
+          RUNNING_COUNT=$(echo "$DEPLOYMENT_INFO" | jq -r '.[0].runningCount // 0')
+          DESIRED_COUNT=$(echo "$DEPLOYMENT_INFO" | jq -r '.[0].desiredCount // 0')
+          ROLLOUT_STATE=$(echo "$DEPLOYMENT_INFO" | jq -r '.[0].rolloutState // "IN_PROGRESS"')
+          
+          echo "📊 Status: Running=$RUNNING_COUNT/$DESIRED_COUNT, State=$ROLLOUT_STATE"
+          
+          if [ "$ROLLOUT_STATE" = "COMPLETED" ] && [ "$RUNNING_COUNT" -eq "$DESIRED_COUNT" ] && [ "$RUNNING_COUNT" -gt 0 ]; then
+            echo "✅ Service is stable!"
+            break
+          elif [ "$ROLLOUT_STATE" = "FAILED" ]; then
+            echo "❌ Deployment failed!"
+            
+            # Show recent events
+            aws ecs describe-services \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --services ${{ env.ECS_SERVICE }} \
+              --query 'services[0].events[:3]' \
+              --output table
+            exit 1
+          fi
+          
+          if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+            sleep 15
+          fi
+        done
 
     - name: Verify deployment
       run: |
         echo "🔍 Verifying deployment..."
         
-        # Wait for new task to register with target group
-        sleep 20
-        
         # Check service status
         SERVICE_STATUS=$(aws ecs describe-services \
           --cluster ${{ env.ECS_CLUSTER }} \
           --services ${{ env.ECS_SERVICE }} \
-          --query 'services[0].deployments[?status==`PRIMARY`].[runningCount, desiredCount]' \
-          --output text)
+          --query 'services[0].{Status:status,Running:runningCount,Desired:desiredCount}' \
+          --output json)
         
-        RUNNING=$(echo $SERVICE_STATUS | cut -d' ' -f1)
-        DESIRED=$(echo $SERVICE_STATUS | cut -d' ' -f2)
+        echo "Service Status:"
+        echo "$SERVICE_STATUS" | jq .
         
-        if [ "$RUNNING" = "$DESIRED" ]; then
-          echo "✅ Deployment successful! $RUNNING/$DESIRED tasks running"
-        else
-          echo "⚠️ Deployment may still be in progress: $RUNNING/$DESIRED tasks"
-        fi
+        # Check target health
+        TARGET_GROUP_ARN="arn:aws:elasticloadbalancing:us-east-1:257394460825:targetgroup/somdip-dev-hr-demo/5eeb69e7b7f8ba21"
         
-        # Quick health check
-        ALB_DNS="somdip-dev-alb-856223136.us-east-1.elb.amazonaws.com"
-        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://$ALB_DNS" -H "Host: demos.somdip.dev" --max-time 10 || echo "timeout")
+        echo "Target Health:"
+        aws elbv2 describe-target-health \
+          --target-group-arn $TARGET_GROUP_ARN \
+          --query 'TargetHealthDescriptions[*].{Target:Target.Id,Health:TargetHealth.State}' \
+          --output table || echo "Could not retrieve target health"
+        
+        # Quick HTTP check
+        sleep 10
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://demos.somdip.dev" -H "Host: demos.somdip.dev" --max-time 10 || echo "timeout")
         echo "🌐 HR Demo Response: $HTTP_CODE"
 
     - name: Cleanup old images
-      if: always()
+      if: success()
+      continue-on-error: true
       run: |
         echo "🧹 Cleaning up old ECR images..."
-        # Keep only last 10 images
-        aws ecr list-images --repository-name ${{ env.ECR_REPOSITORY }} \
-          --query 'imageIds[?type(imageTag)!=`null`]|sort_by(@, &imageTag)|[:-10]' \
-          --output json | jq '.[] | select(.imageTag != "latest")' | jq -s '.' > images-to-delete.json
         
-        if [ -s images-to-delete.json ] && [ "$(cat images-to-delete.json)" != "[]" ]; then
-          aws ecr batch-delete-image \
-            --repository-name ${{ env.ECR_REPOSITORY }} \
-            --image-ids file://images-to-delete.json || true
+        # Keep only last 10 images
+        IMAGES_TO_DELETE=$(aws ecr describe-images \
+          --repository-name ${{ env.ECR_REPOSITORY }} \
+          --query 'sort_by(imageDetails[?imageTag!=`latest`],& imagePushedAt)[:-10].imageDigest' \
+          --output json)
+        
+        if [ "$IMAGES_TO_DELETE" != "[]" ] && [ "$IMAGES_TO_DELETE" != "null" ]; then
+          echo "$IMAGES_TO_DELETE" | jq -r '.[]' | while read digest; do
+            aws ecr batch-delete-image \
+              --repository-name ${{ env.ECR_REPOSITORY }} \
+              --image-ids imageDigest=$digest || true
+          done
         fi
 
     - name: Create deployment summary
@@ -149,10 +198,10 @@ jobs:
           echo "## ✅ Status: **DEPLOYED SUCCESSFULLY**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🔗 Live Links" >> $GITHUB_STEP_SUMMARY
-          echo "- **Production**: https://demos.somdip.dev" >> $GITHUB_STEP_SUMMARY
-          echo "- **ALB Direct**: http://somdip-dev-alb-856223136.us-east-1.elb.amazonaws.com (Host: demos.somdip.dev)" >> $GITHUB_STEP_SUMMARY
+          echo "- **HR Demo**: https://demos.somdip.dev" >> $GITHUB_STEP_SUMMARY
+          echo "- **HR Screening**: https://demos.somdip.dev/hr-screening" >> $GITHUB_STEP_SUMMARY
         else
-          echo "## ❌ Status: **DEPLOYMENT FAILED**" >> $GITHUB_STEP_SUMMARY
+          echo "## ⚠️ Status: **DEPLOYMENT ISSUES**" >> $GITHUB_STEP_SUMMARY
         fi
         
         echo "" >> $GITHUB_STEP_SUMMARY
@@ -163,11 +212,6 @@ jobs:
         echo "| **Service** | \`${{ env.ECS_SERVICE }}\` |" >> $GITHUB_STEP_SUMMARY
         echo "| **Cluster** | \`${{ env.ECS_CLUSTER }}\` |" >> $GITHUB_STEP_SUMMARY
         echo "| **Container** | \`${{ env.CONTAINER_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
-        echo "| **Image** | \`${{ steps.build-image.outputs.image }}\` |" >> $GITHUB_STEP_SUMMARY
-        echo "| **Triggered By** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-        echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Image Tag** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Triggered By** | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
         echo "| **Workflow Run** | [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### ⏱️ Deployment Time" >> $GITHUB_STEP_SUMMARY
-        echo "Completed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_STEP_SUMMARY
