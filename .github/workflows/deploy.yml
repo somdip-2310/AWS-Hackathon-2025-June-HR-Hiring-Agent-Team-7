@@ -134,8 +134,8 @@ jobs:
               ],
               "environment": [
                 {"name": "AWS_REGION", "value": "$AWS_REGION"},
-                {"name": "S3_BUCKET_NAME", "value": "hr-hiring-resumes-js"},
-                {"name": "BEDROCK_MODEL_ID", "value": "us.amazon.nova-premier-v1:0"},
+                {"name": "AWS_S3_BUCKET_NAME", "value": "hr-hiring-resumes-js"},
+                {"name": "AWS_BEDROCK_MODEL_ID", "value": "us.amazon.nova-premier-v1:0"},
                 {"name": "SPRING_PROFILES_ACTIVE", "value": "prod"},
                 {"name": "SERVER_PORT", "value": "8081"},
                 {"name": "JAVA_OPTS", "value": "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"},
