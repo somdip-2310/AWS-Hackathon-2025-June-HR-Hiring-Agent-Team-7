@@ -183,7 +183,7 @@ jobs:
         
         echo "📊 Current desired count: $CURRENT_COUNT"
         
-        # Update service with rolling deployment
+        # Update service with rolling deployment (REMOVED placement-strategy)
         aws ecs update-service \
           --cluster $ECS_CLUSTER \
           --service $ECS_SERVICE \
@@ -199,17 +199,12 @@ jobs:
             "maximumPercent": 200,
             "minimumHealthyPercent": 100
           }' \
-          --placement-strategy '[
-            {
-              "type": "spread",
-              "field": "attribute:ecs.availability-zone"
-            }
-          ]' \
           --query 'service.[serviceName,taskDefinition]' \
           --output table
         
         echo "✅ Zero-downtime deployment initiated"
         echo "📌 Strategy: Rolling update with 100% minimum healthy"
+        echo "📌 Fargate will automatically distribute tasks across AZs"
 
     - name: Monitor zero-downtime deployment
       run: |
@@ -265,6 +260,9 @@ jobs:
       run: |
         echo "🏥 Verifying deployment health..."
         
+        # Wait for tasks to stabilize
+        sleep 30
+        
         # Get running tasks
         TASK_ARNS=$(aws ecs list-tasks \
           --cluster $ECS_CLUSTER \
@@ -301,6 +299,45 @@ jobs:
         if [ "$NEW_IMAGE_COUNT" -ne "$TASK_COUNT" ]; then
           echo "⚠️ Not all tasks updated yet"
         fi
+        
+        # Check task distribution across AZs
+        echo "📍 Task distribution:"
+        aws ecs describe-tasks \
+          --cluster $ECS_CLUSTER \
+          --tasks $TASK_ARNS \
+          --query 'tasks[*].[taskArn,availabilityZone]' \
+          --output table
+
+    - name: Verify ALB target health
+      run: |
+        echo "🎯 Checking ALB target health..."
+        
+        # Get target group ARN
+        TG_ARN=$(aws elbv2 describe-target-groups \
+          --names somdip-dev-hr-demo \
+          --query 'TargetGroups[0].TargetGroupArn' \
+          --output text 2>/dev/null || echo "")
+        
+        if [ ! -z "$TG_ARN" ] && [ "$TG_ARN" != "None" ]; then
+          # Check target health
+          HEALTHY_COUNT=$(aws elbv2 describe-target-health \
+            --target-group-arn $TG_ARN \
+            --query 'length(TargetHealthDescriptions[?TargetHealth.State==`healthy`])' \
+            --output text)
+          
+          TOTAL_COUNT=$(aws elbv2 describe-target-health \
+            --target-group-arn $TG_ARN \
+            --query 'length(TargetHealthDescriptions)' \
+            --output text)
+          
+          echo "✅ Healthy targets: $HEALTHY_COUNT/$TOTAL_COUNT"
+          
+          # Show target details
+          aws elbv2 describe-target-health \
+            --target-group-arn $TG_ARN \
+            --query 'TargetHealthDescriptions[*].[Target.Id,TargetHealth.State,Target.AvailabilityZone]' \
+            --output table
+        fi
 
     - name: Test application endpoints
       run: |
@@ -321,6 +358,12 @@ jobs:
             echo "✅ Application is healthy!"
             echo "  - HTTP Status: $HTTP_STATUS"
             echo "  - HTTPS Status: $HTTPS_STATUS"
+            
+            # Test a few endpoints
+            echo ""
+            echo "Testing specific endpoints:"
+            curl -s -o /dev/null -w "  - Root endpoint: %{http_code}\n" https://demos.somdip.dev/
+            curl -s -o /dev/null -w "  - API endpoint: %{http_code}\n" https://demos.somdip.dev/api/jobs
             break
           else
             echo "⚠️ Retry $((RETRY_COUNT + 1))/$MAX_RETRIES - HTTP: $HTTP_STATUS, HTTPS: $HTTPS_STATUS"
@@ -348,13 +391,16 @@ jobs:
         echo "🔗 Application URLs:"
         echo "   Production: https://demos.somdip.dev"
         echo "   Health Check: https://demos.somdip.dev/"
+        echo "   API Base: https://demos.somdip.dev/api"
         echo ""
         echo "📝 Zero-Downtime Features:"
         echo "   ✓ Rolling deployment with 100% minimum healthy"
         echo "   ✓ Circuit breaker with automatic rollback"
-        echo "   ✓ Multi-AZ task distribution"
-        echo "   ✓ Health check grace period"
+        echo "   ✓ Automatic multi-AZ distribution (Fargate)"
+        echo "   ✓ Health check grace period (120s)"
         echo "   ✓ No service interruption"
+        echo ""
+        echo "💡 Note: Fargate automatically distributes tasks across AZs"
 
     - name: Cleanup
       run: |
