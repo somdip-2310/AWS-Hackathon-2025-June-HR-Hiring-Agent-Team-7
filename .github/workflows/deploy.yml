@@ -99,7 +99,7 @@ jobs:
                 "interval": 30,
                 "timeout": 5,
                 "retries": 3,
-                "startPeriod": 90
+                "startPeriod": 120
               }
             }
           ]
@@ -123,15 +123,17 @@ jobs:
           --task-definition ${{ steps.task-def.outputs.task-def-arn }} \
           --desired-count 2 \
           --deployment-configuration "maximumPercent=100,minimumHealthyPercent=0" \
+          --health-check-grace-period-seconds 300 \
           --force-new-deployment
 
     - name: Wait for deployment
       run: |
         echo "Waiting for deployment to complete..."
-        aws ecs wait services-stable \
+        # Wait up to 10 minutes for service to stabilize
+        timeout 600 aws ecs wait services-stable \
           --cluster $ECS_CLUSTER \
           --services $ECS_SERVICE \
-          || true
+          || echo "Service did not stabilize in 10 minutes, checking status..."
         
         echo "Deployment status:"
         aws ecs describe-services \
@@ -156,7 +158,27 @@ jobs:
           exit 1
         fi
         
-        # Test endpoint
-        sleep 30
-        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://somdip-dev-alb-856223136.us-east-1.elb.amazonaws.com:8081/actuator/health || echo "000")
-        echo "Health check status: $HTTP_STATUS"
+        # Test endpoint with retries
+        echo "Testing application health..."
+        MAX_RETRIES=5
+        RETRY_COUNT=0
+        
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://somdip-dev-alb-856223136.us-east-1.elb.amazonaws.com:8081/actuator/health || echo "000")
+          
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Health check passed: HTTP $HTTP_STATUS"
+            break
+          else
+            echo "⚠️ Health check attempt $((RETRY_COUNT + 1))/$MAX_RETRIES: HTTP $HTTP_STATUS"
+            ((RETRY_COUNT++))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              sleep 15
+            fi
+          fi
+        done
+        
+        if [ "$HTTP_STATUS" != "200" ]; then
+          echo "❌ Health check failed after $MAX_RETRIES attempts"
+          exit 1
+        fi
