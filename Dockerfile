@@ -1,6 +1,4 @@
 # Dockerfile for HR Demo Service
-# Save this file as "Dockerfile" (no extension) in the root of your HR demo repository
-
 # Stage 1: Build the application
 FROM maven:3.9-eclipse-temurin-17 AS build
 
@@ -41,12 +39,12 @@ USER spring:spring
 # Expose port 8081
 EXPOSE 8081
 
-# Health check (adjust the endpoint if your HR demo has a different health check URL)
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:8081/ || exit 1
+# Health check pointing to actuator health endpoint
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
+  CMD curl -f http://localhost:8081/actuator/health || exit 1
 
-# Set JVM options for container environment
-ENV JAVA_OPTS="-Xmx512m -Xms256m"
+# Set JVM options for container environment with better memory management
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -Djava.security.egd=file:/dev/./urandom"
 
 # Run the application
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
