@@ -139,7 +139,6 @@ jobs:
                 {"name": "SPRING_PROFILES_ACTIVE", "value": "prod"},
                 {"name": "SERVER_PORT", "value": "8081"},
                 {"name": "CORS_ALLOWED_ORIGINS", "value": "https://demos.somdip.dev,https://somdip.dev,http://localhost:3000"},
-                {"name": "SECURITY_HEADERS_CONTENT_SECURITY_POLICY", "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' https:"},
                 {"name": "JAVA_OPTS", "value": "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"}
               ],
               "logConfiguration": {
