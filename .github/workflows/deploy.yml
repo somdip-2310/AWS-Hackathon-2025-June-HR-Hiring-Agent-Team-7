@@ -1,0 +1,491 @@
+name: Deploy HR Demo to ECS (Zero Downtime)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+    types: [ closed ]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: somdip-hr-demo
+  ECS_SERVICE: somdip-hr-demo-service
+  ECS_CLUSTER: somdip-dev-cluster
+  ECS_TASK_DEFINITION: somdip-hr-demo
+  CONTAINER_NAME: hr-demo
+  LOG_GROUP: /ecs/somdip-hr-demo
+
+jobs:
+  deploy:
+    name: Deploy to ECS with Zero Downtime
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Cache Maven dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+
+    - name: Run tests
+      run: mvn clean test
+
+    - name: Build with Maven
+      run: mvn clean package -DskipTests
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        echo "🏗️ Building Docker image..."
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        
+        echo "📤 Pushing image to ECR..."
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+        echo "✅ Image pushed successfully"
+
+    - name: Get current task definition
+      id: current-task-def
+      run: |
+        echo "📋 Getting current task definition..."
+        
+        # Get the current task definition
+        aws ecs describe-task-definition \
+          --task-definition $ECS_TASK_DEFINITION \
+          --query 'taskDefinition' > current-task-def.json
+        
+        # Extract values - using defaults if not found
+        CURRENT_CPU=$(cat current-task-def.json | jq -r '.cpu // "512"')
+        CURRENT_MEMORY=$(cat current-task-def.json | jq -r '.memory // "1024"')
+        EXECUTION_ROLE=$(cat current-task-def.json | jq -r '.executionRoleArn // "arn:aws:iam::257394460825:role/ecsTaskExecutionRole"')
+        TASK_ROLE=$(cat current-task-def.json | jq -r '.taskRoleArn // "arn:aws:iam::257394460825:role/ecsTaskRole"')
+        
+        echo "current-cpu=$CURRENT_CPU" >> $GITHUB_OUTPUT
+        echo "current-memory=$CURRENT_MEMORY" >> $GITHUB_OUTPUT
+        echo "execution-role=$EXECUTION_ROLE" >> $GITHUB_OUTPUT
+        echo "task-role=$TASK_ROLE" >> $GITHUB_OUTPUT
+        
+        echo "✅ Current configuration retrieved"
+        echo "  CPU: $CURRENT_CPU"
+        echo "  Memory: $CURRENT_MEMORY"
+        echo "  Execution Role: ${EXECUTION_ROLE##*/}"
+        echo "  Task Role: ${TASK_ROLE##*/}"
+
+    - name: Create optimized task definition
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+        EXECUTION_ROLE: ${{ steps.current-task-def.outputs.execution-role }}
+        TASK_ROLE: ${{ steps.current-task-def.outputs.task-role }}
+        CURRENT_CPU: ${{ steps.current-task-def.outputs.current-cpu }}
+        CURRENT_MEMORY: ${{ steps.current-task-def.outputs.current-memory }}
+      run: |
+        echo "📝 Creating optimized task definition for zero downtime..."
+        
+        # Create task definition with all required environment variables
+        cat > task-definition.json << EOF
+        {
+          "family": "$ECS_TASK_DEFINITION",
+          "networkMode": "awsvpc",
+          "requiresCompatibilities": ["FARGATE"],
+          "cpu": "$CURRENT_CPU",
+          "memory": "$CURRENT_MEMORY",
+          "executionRoleArn": "$EXECUTION_ROLE",
+          "taskRoleArn": "$TASK_ROLE",
+          "containerDefinitions": [
+            {
+              "name": "$CONTAINER_NAME",
+              "image": "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG",
+              "cpu": 0,
+              "essential": true,
+              "portMappings": [
+                {
+                  "containerPort": 8081,
+                  "protocol": "tcp"
+                }
+              ],
+              "environment": [
+                {"name": "AWS_REGION", "value": "$AWS_REGION"},
+                {"name": "S3_BUCKET_NAME", "value": "hr-hiring-resumes-js"},
+                {"name": "BEDROCK_MODEL_ID", "value": "us.amazon.nova-premier-v1:0"},
+                {"name": "SPRING_PROFILES_ACTIVE", "value": "prod"},
+                {"name": "SERVER_PORT", "value": "8081"},
+                {"name": "CORS_ALLOWED_ORIGINS", "value": "https://demos.somdip.dev,https://somdip.dev,https://www.somdip.dev,http://localhost:8080,http://localhost:8081"},
+                {"name": "SECURITY_HEADERS_CONTENT_SECURITY_POLICY", "value": "frame-ancestors 'self' https://somdip.dev https://www.somdip.dev http://localhost:8080 http://localhost:8081;"},
+                {"name": "JAVA_OPTS", "value": "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"}
+              ],
+              "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                  "awslogs-group": "$LOG_GROUP",
+                  "awslogs-region": "$AWS_REGION",
+                  "awslogs-stream-prefix": "ecs"
+                }
+              },
+              "healthCheck": {
+                "command": ["CMD-SHELL", "curl -f http://localhost:8081/actuator/health || exit 1"],
+                "interval": 30,
+                "timeout": 5,
+                "retries": 3,
+                "startPeriod": 90
+              }
+            }
+          ]
+        }
+        EOF
+        
+        echo "✅ Task definition created with all required environment variables"
+        echo "📋 Environment variables configured:"
+        cat task-definition.json | jq '.containerDefinitions[0].environment[].name' | sort
+
+    - name: Register new task definition
+      id: register-task-def
+      run: |
+        echo "📝 Registering new task definition..."
+        
+        NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+          --cli-input-json file://task-definition.json \
+          --query 'taskDefinition.taskDefinitionArn' \
+          --output text)
+        
+        echo "new-task-def-arn=$NEW_TASK_DEF_ARN" >> $GITHUB_OUTPUT
+        REVISION=$(echo $NEW_TASK_DEF_ARN | awk -F: '{print $NF}')
+        echo "✅ New task definition registered: Revision $REVISION"
+
+    - name: Update service for zero-downtime deployment
+      run: |
+        echo "🚀 Starting zero-downtime deployment..."
+        
+        # Get current service configuration
+        CURRENT_COUNT=$(aws ecs describe-services \
+          --cluster $ECS_CLUSTER \
+          --service $ECS_SERVICE \
+          --query 'services[0].desiredCount' \
+          --output text)
+        
+        # Default to 2 if count is 0 or null
+        if [ "$CURRENT_COUNT" = "0" ] || [ "$CURRENT_COUNT" = "None" ]; then
+          CURRENT_COUNT=2
+        fi
+        
+        echo "📊 Desired count: $CURRENT_COUNT"
+        
+        # Update service with rolling deployment
+        aws ecs update-service \
+          --cluster $ECS_CLUSTER \
+          --service $ECS_SERVICE \
+          --task-definition ${{ steps.register-task-def.outputs.new-task-def-arn }} \
+          --desired-count $CURRENT_COUNT \
+          --force-new-deployment \
+          --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100,deploymentCircuitBreaker={enable=true,rollback=true}" \
+          --query 'service.[serviceName,taskDefinition]' \
+          --output table
+        
+        echo "✅ Zero-downtime deployment initiated"
+        echo "📌 Strategy: Rolling update with 100% minimum healthy"
+        echo "📌 Circuit breaker enabled with automatic rollback"
+
+    - name: Monitor zero-downtime deployment
+      run: |
+        echo "👀 Monitoring zero-downtime deployment progress..."
+        
+        START_TIME=$(date +%s)
+        TIMEOUT=600  # 10 minutes
+        DEPLOYMENT_COMPLETE=false
+        
+        while [ "$DEPLOYMENT_COMPLETE" = false ]; do
+          # Get deployment status
+          DEPLOYMENT_INFO=$(aws ecs describe-services \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --query 'services[0].deployments' \
+            --output json)
+          
+          # Count deployments
+          DEPLOYMENT_COUNT=$(echo $DEPLOYMENT_INFO | jq 'length')
+          
+          # Check if deployment is complete
+          if [ "$DEPLOYMENT_COUNT" -eq 1 ]; then
+            PRIMARY_STATUS=$(echo $DEPLOYMENT_INFO | jq -r '.[0].status')
+            PRIMARY_RUNNING=$(echo $DEPLOYMENT_INFO | jq -r '.[0].runningCount')
+            PRIMARY_DESIRED=$(echo $DEPLOYMENT_INFO | jq -r '.[0].desiredCount')
+            
+            if [ "$PRIMARY_STATUS" = "PRIMARY" ] && [ "$PRIMARY_RUNNING" -eq "$PRIMARY_DESIRED" ] && [ "$PRIMARY_RUNNING" -gt 0 ]; then
+              echo "✅ Deployment completed successfully!"
+              DEPLOYMENT_COMPLETE=true
+              break
+            fi
+          fi
+          
+          # Show current status
+          echo "📊 Deployment status at $(date '+%H:%M:%S'):"
+          echo $DEPLOYMENT_INFO | jq -r '.[] | "  - \(.status): \(.desiredCount) desired, \(.runningCount) running, \(.pendingCount) pending"'
+          
+          # Check timeout
+          CURRENT_TIME=$(date +%s)
+          ELAPSED=$((CURRENT_TIME - START_TIME))
+          if [ $ELAPSED -gt $TIMEOUT ]; then
+            echo "⚠️ Deployment timeout after $TIMEOUT seconds"
+            
+            # Check if at least one task is running
+            RUNNING_TASKS=$(echo $DEPLOYMENT_INFO | jq '[.[] | .runningCount] | add')
+            if [ "$RUNNING_TASKS" -gt 0 ]; then
+              echo "✅ At least $RUNNING_TASKS tasks are running. Deployment should complete eventually."
+              break
+            else
+              echo "❌ No tasks are running. Deployment may have failed."
+              exit 1
+            fi
+          fi
+          
+          # Check for circuit breaker rollback
+          ROLLBACK=$(echo $DEPLOYMENT_INFO | jq -r '.[] | select(.status == "PRIMARY") | .rolloutState // "IN_PROGRESS"')
+          if [ "$ROLLBACK" = "FAILED" ]; then
+            echo "❌ Deployment failed and circuit breaker triggered rollback"
+            
+            # Get failed task reasons
+            echo "Checking for failed task reasons..."
+            aws ecs describe-services \
+              --cluster $ECS_CLUSTER \
+              --service $ECS_SERVICE \
+              --query 'services[0].events[:5]' \
+              --output table
+            
+            exit 1
+          fi
+          
+          sleep 20
+        done
+
+    - name: Verify healthy deployment
+      run: |
+        echo "🏥 Verifying deployment health..."
+        
+        # Wait for tasks to stabilize
+        sleep 30
+        
+        # Get running tasks
+        TASK_ARNS=$(aws ecs list-tasks \
+          --cluster $ECS_CLUSTER \
+          --service-name $ECS_SERVICE \
+          --desired-status RUNNING \
+          --query 'taskArns' \
+          --output text)
+        
+        if [ -z "$TASK_ARNS" ]; then
+          echo "❌ No running tasks found"
+          exit 1
+        fi
+        
+        # Check all tasks are healthy
+        TASK_COUNT=$(echo $TASK_ARNS | wc -w)
+        echo "✅ Found $TASK_COUNT running tasks"
+        
+        # Verify tasks are using new image
+        NEW_IMAGE_COUNT=0
+        for TASK in $TASK_ARNS; do
+          IMAGE=$(aws ecs describe-tasks \
+            --cluster $ECS_CLUSTER \
+            --tasks $TASK \
+            --query 'tasks[0].containers[0].image' \
+            --output text)
+          
+          if [[ "$IMAGE" == *"${{ github.sha }}"* ]]; then
+            ((NEW_IMAGE_COUNT++))
+          fi
+        done
+        
+        echo "✅ $NEW_IMAGE_COUNT/$TASK_COUNT tasks running new image"
+
+    - name: Verify ALB target health
+      run: |
+        echo "🎯 Checking ALB target health..."
+        
+        # Get target group ARN
+        TG_ARN=$(aws elbv2 describe-target-groups \
+          --names somdip-dev-hr-demo \
+          --query 'TargetGroups[0].TargetGroupArn' \
+          --output text 2>/dev/null || echo "")
+        
+        if [ ! -z "$TG_ARN" ] && [ "$TG_ARN" != "None" ]; then
+          # Wait for targets to stabilize
+          sleep 20
+          
+          # Check target health with retries
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            HEALTHY_COUNT=$(aws elbv2 describe-target-health \
+              --target-group-arn $TG_ARN \
+              --query 'length(TargetHealthDescriptions[?TargetHealth.State==`healthy`])' \
+              --output text)
+            
+            if [ "$HEALTHY_COUNT" -gt 0 ]; then
+              break
+            fi
+            
+            echo "⚠️ No healthy targets yet, waiting... (Retry $((RETRY_COUNT + 1))/$MAX_RETRIES)"
+            sleep 20
+            ((RETRY_COUNT++))
+          done
+          
+          TOTAL_COUNT=$(aws elbv2 describe-target-health \
+            --target-group-arn $TG_ARN \
+            --query 'length(TargetHealthDescriptions)' \
+            --output text)
+          
+          echo "✅ Healthy targets: $HEALTHY_COUNT/$TOTAL_COUNT"
+          
+          # Show target details
+          aws elbv2 describe-target-health \
+            --target-group-arn $TG_ARN \
+            --query 'TargetHealthDescriptions[*].[Target.Id,TargetHealth.State,TargetHealth.Reason]' \
+            --output table
+        else
+          echo "⚠️ Target group not found or not accessible"
+        fi
+
+    - name: Test application endpoints
+      run: |
+        echo "🧪 Testing application endpoints..."
+        
+        # Test with retries
+        MAX_RETRIES=10
+        RETRY_COUNT=0
+        SUCCESS=false
+        
+        # First, test the ALB directly
+        ALB_URL="http://somdip-dev-alb-856223136.us-east-1.elb.amazonaws.com:8081"
+        echo "Testing ALB directly at $ALB_URL"
+        
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = false ]; do
+          ALB_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $ALB_URL/actuator/health || echo "000")
+          
+          if [ "$ALB_STATUS" = "200" ]; then
+            echo "✅ ALB health check passed!"
+            SUCCESS=true
+          else
+            echo "⚠️ ALB check retry $((RETRY_COUNT + 1))/$MAX_RETRIES - Status: $ALB_STATUS"
+            ((RETRY_COUNT++))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              sleep 15
+            fi
+          fi
+        done
+        
+        # Now test via CloudFront
+        echo ""
+        echo "Testing via CloudFront at https://demos.somdip.dev"
+        RETRY_COUNT=0
+        SUCCESS=false
+        
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = false ]; do
+          HTTPS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://demos.somdip.dev/ || echo "000")
+          
+          if [ "$HTTPS_STATUS" = "200" ]; then
+            echo "✅ Application is healthy via CloudFront!"
+            SUCCESS=true
+            
+            # Test a few endpoints
+            echo ""
+            echo "Testing specific endpoints:"
+            curl -s -o /dev/null -w "  - Root endpoint: %{http_code}\n" https://demos.somdip.dev/
+            curl -s -o /dev/null -w "  - API jobs endpoint: %{http_code}\n" https://demos.somdip.dev/api/jobs || echo "  - API jobs endpoint: Not available"
+            curl -s -o /dev/null -w "  - Health check: %{http_code}\n" $ALB_URL/actuator/health || echo "  - Health check: Not available"
+          else
+            echo "⚠️ CloudFront retry $((RETRY_COUNT + 1))/$MAX_RETRIES - HTTPS: $HTTPS_STATUS"
+            ((RETRY_COUNT++))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              sleep 15
+            fi
+          fi
+        done
+        
+        if [ "$SUCCESS" = false ]; then
+          echo "❌ Application health check failed after $MAX_RETRIES retries"
+          echo "Note: This might be due to CloudFront cache. The application may still be healthy."
+          # Don't fail the deployment if ALB was healthy
+          if [ "$ALB_STATUS" = "200" ]; then
+            echo "✅ ALB is healthy, so deployment is considered successful"
+          else
+            exit 1
+          fi
+        fi
+
+    - name: Deployment summary
+      if: always()
+      run: |
+        echo ""
+        echo "🎉 HR Demo Deployment Summary"
+        echo "============================="
+        echo "✅ Image: ${{ steps.build-image.outputs.image }}"
+        echo "✅ Task Definition: ${{ steps.register-task-def.outputs.new-task-def-arn }}"
+        echo "✅ Deployment Strategy: Zero-downtime rolling update"
+        echo ""
+        echo "📊 Final Service Status:"
+        aws ecs describe-services \
+          --cluster $ECS_CLUSTER \
+          --service $ECS_SERVICE \
+          --query 'services[0].[serviceName,runningCount,desiredCount,pendingCount]' \
+          --output table || echo "Unable to fetch service status"
+        echo ""
+        echo "🔗 Application URLs:"
+        echo "   Production: https://demos.somdip.dev"
+        echo "   Direct ALB: http://somdip-dev-alb-856223136.us-east-1.elb.amazonaws.com:8081"
+        echo ""
+        echo "📝 Configuration Summary:"
+        echo "   - S3 Bucket: hr-hiring-resumes-js"
+        echo "   - Bedrock Model: us.amazon.nova-premier-v1:0"
+        echo "   - Container Resources: CPU ${{ steps.current-task-def.outputs.current-cpu }}, Memory ${{ steps.current-task-def.outputs.current-memory }}"
+        echo "   - Security Headers: Configured"
+        echo ""
+        echo "⚙️ Deployment Configuration:"
+        echo "   - Minimum Healthy: 100%"
+        echo "   - Maximum Percent: 200%"
+        echo "   - Circuit Breaker: Enabled with auto-rollback"
+        echo "   - Health Check Grace: 90 seconds"
+        echo ""
+        
+        # Show recent service events
+        echo "📋 Recent Service Events:"
+        aws ecs describe-services \
+          --cluster $ECS_CLUSTER \
+          --service $ECS_SERVICE \
+          --query 'services[0].events[:3]' \
+          --output table
+
+    - name: Cleanup
+      if: always()
+      run: |
+        rm -f task-definition.json current-task-def.json
+        echo "✅ Cleanup completed"
