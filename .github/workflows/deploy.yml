@@ -170,8 +170,8 @@ jobs:
             echo "✅ Health check passed: HTTP $HTTP_STATUS"
             break
           else
-            echo "⚠️ Health check attempt $((RETRY_COUNT + 1))/$MAX_RETRIES: HTTP $HTTP_STATUS"
-            ((RETRY_COUNT++))
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "⚠️ Health check attempt $RETRY_COUNT/$MAX_RETRIES: HTTP $HTTP_STATUS"
             if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
               sleep 15
             fi
