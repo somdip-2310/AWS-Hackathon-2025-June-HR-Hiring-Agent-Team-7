@@ -22712,3 +22712,57 @@ task organization
 2025-06-17 12:54:46 [RMI TCP Connection(19)-127.0.0.1] INFO  o.a.catalina.core.StandardService - Stopping service [Tomcat]
 2025-06-17 12:54:46 [RMI TCP Connection(19)-127.0.0.1] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Destroying Spring FrameworkServlet 'dispatcherServlet'
 2025-06-17 12:54:46 [RMI TCP Connection(19)-127.0.0.1] DEBUG c.h.h.c.HeaderConfig$HeaderFilter - HeaderFilter destroyed
+2025-06-17 15:22:04 [restartedMain] INFO  c.h.h.AwsHackathonHrHiringAgentApplication - Starting AwsHackathonHrHiringAgentApplication using Java 17.0.14 on Somdips-MacBook-Air.local with PID 98502 (/Users/somdiproy/Documents/AWS Hackathon/HR Hiring Agent/target/classes started by somdiproy in /Users/somdiproy/Documents/AWS Hackathon/HR Hiring Agent)
+2025-06-17 15:22:04 [restartedMain] DEBUG c.h.h.AwsHackathonHrHiringAgentApplication - Running with Spring Boot v2.7.18, Spring v5.3.31
+2025-06-17 15:22:04 [restartedMain] INFO  c.h.h.AwsHackathonHrHiringAgentApplication - No active profile set, falling back to 1 default profile: "default"
+2025-06-17 15:22:04 [restartedMain] INFO  o.s.b.d.e.DevToolsPropertyDefaultsPostProcessor - Devtools property defaults active! Set 'spring.devtools.add-properties' to 'false' to disable
+2025-06-17 15:22:04 [restartedMain] INFO  o.s.b.d.e.DevToolsPropertyDefaultsPostProcessor - For additional web related logging consider setting the 'logging.level.web' property to 'DEBUG'
+2025-06-17 15:22:06 [restartedMain] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat initialized with port(s): 8081 (http)
+2025-06-17 15:22:06 [restartedMain] INFO  o.a.catalina.core.StandardService - Starting service [Tomcat]
+2025-06-17 15:22:06 [restartedMain] INFO  o.a.catalina.core.StandardEngine - Starting Servlet engine: [Apache Tomcat/9.0.83]
+2025-06-17 15:22:06 [restartedMain] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring embedded WebApplicationContext
+2025-06-17 15:22:06 [restartedMain] INFO  o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 1932 ms
+2025-06-17 15:22:06 [restartedMain] INFO  com.hackathon.hr.config.HeaderConfig - Security Headers Configuration:
+2025-06-17 15:22:06 [restartedMain] INFO  com.hackathon.hr.config.HeaderConfig -   Content-Security-Policy: frame-ancestors 'self' https://somdip.dev https://www.somdip.dev http://localhost:8080 http://localhost:8081;
+2025-06-17 15:22:06 [restartedMain] INFO  com.hackathon.hr.config.HeaderConfig -   iFrame embedding enabled: true
+2025-06-17 15:22:06 [restartedMain] DEBUG c.h.h.c.HeaderConfig$HeaderFilter - HeaderFilter initialized
+2025-06-17 15:22:06 [restartedMain] INFO  com.hackathon.hr.config.AwsConfig - AWS Configuration initialized:
+2025-06-17 15:22:06 [restartedMain] INFO  com.hackathon.hr.config.AwsConfig -   Region: us-east-1
+2025-06-17 15:22:06 [restartedMain] INFO  com.hackathon.hr.config.AwsConfig -   Using credentials: Default chain
+2025-06-17 15:22:06 [restartedMain] INFO  com.hackathon.hr.config.WebMvcConfig - CORS Configuration initialized:
+2025-06-17 15:22:06 [restartedMain] INFO  com.hackathon.hr.config.WebMvcConfig -   Allowed Origins: https://somdip.dev,https://www.somdip.dev,https://demos.somdip.dev,http://localhost:8080,http://localhost:8081
+2025-06-17 15:22:06 [restartedMain] INFO  com.hackathon.hr.config.WebMvcConfig -   Allowed Methods: GET,POST,PUT,DELETE,OPTIONS,HEAD
+2025-06-17 15:22:06 [restartedMain] INFO  com.hackathon.hr.config.WebMvcConfig -   Max Age: 3600
+2025-06-17 15:22:06 [restartedMain] INFO  com.hackathon.hr.config.AwsConfig - Using default AWS credentials provider chain (IAM role, etc.)
+2025-06-17 15:22:06 [restartedMain] INFO  com.hackathon.hr.config.AwsConfig - Creating S3 client for region: us-east-1
+2025-06-17 15:22:07 [restartedMain] INFO  com.hackathon.hr.service.S3Service - S3Service initialized with bucket: hr-hiring-resumes-js
+2025-06-17 15:22:07 [restartedMain] INFO  com.hackathon.hr.config.AwsConfig - Creating Textract client for region: us-east-1
+2025-06-17 15:22:07 [restartedMain] INFO  c.h.hr.service.TextractService - TextractService initialized with bucket: hr-hiring-resumes-js
+2025-06-17 15:22:07 [restartedMain] INFO  com.hackathon.hr.config.AwsConfig - Creating Bedrock Runtime client for region: us-east-1
+2025-06-17 15:22:07 [restartedMain] INFO  c.h.hr.service.BedrockService - BedrockService initialized with model: us.amazon.nova-premier-v1:0
+2025-06-17 15:22:07 [restartedMain] INFO  c.h.hr.service.CandidateService - Initialized 10 sample jobs matching candidate profiles
+2025-06-17 15:22:07 [restartedMain] INFO  c.h.hr.service.CandidateService - CandidateService initialized with 10 sample jobs
+2025-06-17 15:22:07 [restartedMain] WARN  c.hackathon.hr.service.EmailService - SendGrid API key not configured - email sending will be simulated
+2025-06-17 15:22:07 [restartedMain] DEBUG o.s.w.s.m.m.a.RequestMappingHandlerAdapter - ControllerAdvice beans: 0 @ModelAttribute, 0 @InitBinder, 1 RequestBodyAdvice, 1 ResponseBodyAdvice
+2025-06-17 15:22:07 [restartedMain] INFO  o.s.b.a.w.s.WelcomePageHandlerMapping - Adding welcome page template: index
+2025-06-17 15:22:07 [restartedMain] INFO  com.hackathon.hr.config.WebMvcConfig - CORS configured with 5 allowed origins
+2025-06-17 15:22:07 [restartedMain] DEBUG o.s.w.s.m.m.a.RequestMappingHandlerMapping - 34 mappings in 'requestMappingHandlerMapping'
+2025-06-17 15:22:07 [restartedMain] DEBUG o.s.w.s.h.SimpleUrlHandlerMapping - Patterns [/webjars/**, /**, /static/**, /css/**, /js/**, /images/**] in 'resourceHandlerMapping'
+2025-06-17 15:22:07 [restartedMain] DEBUG o.s.w.s.m.m.a.ExceptionHandlerExceptionResolver - ControllerAdvice beans: 0 @ExceptionHandler, 1 ResponseBodyAdvice
+2025-06-17 15:22:08 [restartedMain] INFO  o.s.b.d.a.OptionalLiveReloadServer - LiveReload server is running on port 35729
+2025-06-17 15:22:08 [restartedMain] INFO  o.s.b.a.e.web.EndpointLinksResolver - Exposing 3 endpoint(s) beneath base path '/actuator'
+2025-06-17 15:22:08 [restartedMain] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat started on port(s): 8081 (http) with context path ''
+2025-06-17 15:22:08 [restartedMain] INFO  c.h.h.AwsHackathonHrHiringAgentApplication - Started AwsHackathonHrHiringAgentApplication in 4.056 seconds (JVM running for 5.328)
+2025-06-17 15:22:09 [RMI TCP Connection(10)-127.0.0.1] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2025-06-17 15:22:09 [RMI TCP Connection(10)-127.0.0.1] INFO  o.s.web.servlet.DispatcherServlet - Initializing Servlet 'dispatcherServlet'
+2025-06-17 15:22:09 [RMI TCP Connection(10)-127.0.0.1] DEBUG o.s.web.servlet.DispatcherServlet - Detected StandardServletMultipartResolver
+2025-06-17 15:22:09 [RMI TCP Connection(10)-127.0.0.1] DEBUG o.s.web.servlet.DispatcherServlet - Detected AcceptHeaderLocaleResolver
+2025-06-17 15:22:09 [RMI TCP Connection(10)-127.0.0.1] DEBUG o.s.web.servlet.DispatcherServlet - Detected FixedThemeResolver
+2025-06-17 15:22:09 [RMI TCP Connection(10)-127.0.0.1] DEBUG o.s.web.servlet.DispatcherServlet - Detected org.springframework.web.servlet.view.DefaultRequestToViewNameTranslator@2fa500cf
+2025-06-17 15:22:09 [RMI TCP Connection(10)-127.0.0.1] DEBUG o.s.web.servlet.DispatcherServlet - Detected org.springframework.web.servlet.support.SessionFlashMapManager@7845f40
+2025-06-17 15:22:09 [RMI TCP Connection(10)-127.0.0.1] DEBUG o.s.web.servlet.DispatcherServlet - enableLoggingRequestDetails='false': request parameters and headers will be masked to prevent unsafe logging of potentially sensitive data
+2025-06-17 15:22:09 [RMI TCP Connection(10)-127.0.0.1] INFO  o.s.web.servlet.DispatcherServlet - Completed initialization in 5 ms
+2025-06-17 15:22:15 [RMI TCP Connection(7)-127.0.0.1] INFO  o.s.b.a.SpringApplicationAdminMXBeanRegistrar$SpringApplicationAdmin - Application shutdown requested.
+2025-06-17 15:22:15 [RMI TCP Connection(7)-127.0.0.1] INFO  o.a.catalina.core.StandardService - Stopping service [Tomcat]
+2025-06-17 15:22:15 [RMI TCP Connection(7)-127.0.0.1] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Destroying Spring FrameworkServlet 'dispatcherServlet'
+2025-06-17 15:22:15 [RMI TCP Connection(7)-127.0.0.1] DEBUG c.h.h.c.HeaderConfig$HeaderFilter - HeaderFilter destroyed
