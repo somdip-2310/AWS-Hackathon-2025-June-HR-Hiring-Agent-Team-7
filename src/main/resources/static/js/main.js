@@ -1514,7 +1514,10 @@ const SessionManager = {
 	async verifyCode() {
 	    this.trackInteraction();
 	    const code = document.getElementById('codeInput').value.trim();
-	    if (!code || !userEmail) return;
+	    if (!code || !userEmail) {
+	        alert('Please enter the verification code');
+	        return;
+	    }
 	    
 	    const btn = document.getElementById('verifyCodeBtn');
 	    const originalText = btn.innerHTML;
@@ -1523,10 +1526,19 @@ const SessionManager = {
 	        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Verifying...';
 	        btn.disabled = true;
 	        
+	        console.log('Verifying with email:', userEmail, 'and code:', code);
+	        
+	        // Create form data using URLSearchParams for proper encoding
+	        const formData = new URLSearchParams();
+	        formData.append('email', userEmail);
+	        formData.append('code', code);
+	        
 	        const response = await fetch('/api/session/verify-email', {
 	            method: 'POST',
-	            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-	            body: `email=${encodeURIComponent(userEmail)}&code=${encodeURIComponent(code)}`
+	            headers: { 
+	                'Content-Type': 'application/x-www-form-urlencoded' 
+	            },
+	            body: formData.toString()  // Convert URLSearchParams to string
 	        });
 	        
 	        const data = await response.json();
@@ -1599,7 +1611,6 @@ const SessionManager = {
 	        }, 100);
 	    }
 	},
-    
     // FIX 1: Force modal to close when Start Demo is clicked
     startDemo() {
         console.log('Starting demo - forcing modal close');
