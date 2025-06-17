@@ -90,7 +90,8 @@ jobs:
                 {"name": "SENDGRID_ENABLED", "value": "true"},
                 {"name": "SENDGRID_FROM_EMAIL", "value": "hr-agent@somdip.dev"},
                 {"name": "SENDGRID_FROM_NAME", "value": "HR Hiring Agent Somdip Demo"},
-                {"name": "APPLICATION_URL", "value": "https://demos.somdip.dev/hr-agent"}
+                {"name": "APPLICATION_URL", "value": "https://demos.somdip.dev/hr-agent"},
+                {"name": "SINGLE_INSTANCE_MODE", "value": "true"}
               ],
               "logConfiguration": {
                 "logDriver": "awslogs",
@@ -127,8 +128,8 @@ jobs:
           --cluster $ECS_CLUSTER \
           --service $ECS_SERVICE \
           --task-definition ${{ steps.task-def.outputs.task-def-arn }} \
-          --desired-count 2 \
-          --deployment-configuration "maximumPercent=100,minimumHealthyPercent=0" \
+          --desired-count 1 \
+          --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100" \
           --health-check-grace-period-seconds 300 \
           --force-new-deployment
 
@@ -157,18 +158,18 @@ jobs:
           --query 'services[0].runningCount' \
           --output text)
         
-        if [ "$RUNNING_COUNT" -gt 0 ]; then
-          echo "✅ Deployment successful: $RUNNING_COUNT tasks running"
+        if [ "$RUNNING_COUNT" -eq 1 ]; then
+          echo "✅ Deployment successful: 1 task running (single instance mode)"
         else
-          echo "❌ Deployment failed: No tasks running"
+          echo "❌ Deployment failed: Expected 1 task, found $RUNNING_COUNT"
           exit 1
         fi
         
-        # Wait for tasks to be registered in ALB
+        # Wait for task to be registered in ALB
         echo "Waiting for ALB target registration..."
         sleep 60
         
-        # Check ALB target health instead of direct HTTP
+        # Check ALB target health
         TG_ARN="arn:aws:elasticloadbalancing:us-east-1:257394460825:targetgroup/somdip-dev-hr-demo/5eeb69e7b7f8ba21"
         
         HEALTHY_TARGETS=$(aws elbv2 describe-target-health \
@@ -178,10 +179,13 @@ jobs:
         
         echo "Healthy targets in ALB: $HEALTHY_TARGETS"
         
-        if [ "$HEALTHY_TARGETS" -gt 0 ]; then
-          echo "✅ At least one target is healthy in the load balancer"
+        if [ "$HEALTHY_TARGETS" -eq 1 ]; then
+          echo "✅ Single instance is healthy in the load balancer"
         else
-          echo "❌ No healthy targets in the load balancer"
-          # Don't fail the deployment if tasks are running
-          echo "Note: Tasks are running but may need more time to become healthy"
+          echo "⚠️ Warning: Instance may need more time to become healthy"
+          echo "Current target health:"
+          aws elbv2 describe-target-health \
+            --target-group-arn $TG_ARN \
+            --query 'TargetHealthDescriptions[*].[Target.Id,TargetHealth.State,TargetHealth.Reason]' \
+            --output table
         fi
