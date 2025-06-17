@@ -89,6 +89,7 @@ jobs:
                 {"name": "SENDGRID_API_KEY", "value": "$SENDGRID_API_KEY"},
                 {"name": "SENDGRID_ENABLED", "value": "true"},
                 {"name": "SENDGRID_FROM_EMAIL", "value": "hr-agent@somdip.dev"},
+                {"name": "SENDGRID_FROM_NAME", "value": "HR Hiring Agent Somdip Demo"},
                 {"name": "APPLICATION_URL", "value": "https://demos.somdip.dev/hr-agent"}
               ],
               "logConfiguration": {
