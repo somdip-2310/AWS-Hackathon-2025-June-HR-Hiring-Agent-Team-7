@@ -894,3 +894,203 @@ footer a:hover {
 #architectureInfoStep::-webkit-scrollbar-thumb:hover {
     background: #64748b;
 }
+
+/* ========================================
+   UPLOAD SESSION FREEZE STYLES
+   ======================================== */
+
+.upload-section-frozen {
+    background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+    border-left: 4px solid #10b981;
+    transition: all 0.3s ease;
+}
+
+.upload-zone-locked {
+    background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+    border: 2px dashed #9ca3af;
+    cursor: not-allowed;
+    pointer-events: none;
+    opacity: 0.8;
+    transition: all 0.5s ease;
+}
+
+.upload-zone-locked:hover {
+    background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+    border-color: #9ca3af;
+    transform: none;
+}
+
+.step-number.locked {
+    background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+}
+
+.step-number.processing {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    animation: processingPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes processingPulse {
+    0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+    }
+    50% {
+        transform: scale(1.1);
+        box-shadow: 0 0 0 10px rgba(245, 158, 11, 0);
+    }
+}
+
+.cursor-not-allowed {
+    cursor: not-allowed !important;
+}
+
+.pointer-events-none {
+    pointer-events: none !important;
+}
+
+
+/* ========================================
+   MODAL OVERFLOW FIX - UPDATED
+   ======================================== */
+/* Fix for modal overflow with many queue users */
+#sessionModal .bg-white.rounded-xl {
+    max-height: 90vh; /* Maximum 90% of viewport height */
+    overflow-y: auto; /* Allow scrolling on the modal container */
+    overflow-x: hidden;
+}
+
+/* Fix for all modal steps to be scrollable */
+#emailStep,
+#verificationStep,
+#sessionActiveStep,
+#successStep,
+#errorStep,
+#architectureInfoStep,
+#yourTurnStep {
+    max-height: 85vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 2rem; /* Add padding at bottom for scroll */
+}
+
+/* Remove the flex from sessionActiveStep to allow natural flow */
+#sessionActiveStep {
+    display: block; /* Change from flex to block */
+}
+
+/* Queue info section - remove max-height to prevent double scrolling */
+#queueInfo {
+    margin-bottom: 1.5rem;
+    /* Remove max-height and overflow to prevent nested scrolling */
+}
+
+/* Waiting list with reasonable constraints */
+#waitingList {
+    max-height: 200px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 8px;
+    margin-top: 0.5rem;
+}
+
+/* Custom scrollbar for modal content */
+#sessionModal .bg-white.rounded-xl::-webkit-scrollbar,
+#emailStep::-webkit-scrollbar,
+#sessionActiveStep::-webkit-scrollbar {
+    width: 8px;
+}
+
+#sessionModal .bg-white.rounded-xl::-webkit-scrollbar-track,
+#emailStep::-webkit-scrollbar-track,
+#sessionActiveStep::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 4px;
+}
+
+#sessionModal .bg-white.rounded-xl::-webkit-scrollbar-thumb,
+#emailStep::-webkit-scrollbar-thumb,
+#sessionActiveStep::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+
+#sessionModal .bg-white.rounded-xl::-webkit-scrollbar-thumb:hover,
+#emailStep::-webkit-scrollbar-thumb:hover,
+#sessionActiveStep::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* Ensure modal content doesn't overflow on mobile */
+@media (max-width: 640px) {
+    #sessionModal .bg-white.rounded-xl {
+        max-height: 85vh;
+        margin: 20px;
+        width: calc(100% - 40px);
+    }
+    
+    #emailStep,
+    #verificationStep,
+    #sessionActiveStep,
+    #successStep,
+    #errorStep,
+    #architectureInfoStep,
+    #yourTurnStep {
+        max-height: 80vh;
+        padding: 1.5rem;
+    }
+    
+    #waitingList {
+        max-height: 150px;
+    }
+}
+
+/* Fix modal centering without breaking scroll */
+#sessionModal > div {
+    display: flex;
+    align-items: flex-start; /* Change from center to flex-start */
+    justify-content: center;
+    min-height: 100vh;
+    padding: 2rem 1rem; /* Add vertical padding */
+    overflow-y: auto; /* Allow outer container to scroll */
+}
+
+/* Ensure the modal container has proper constraints */
+#sessionModal .max-w-md {
+    width: 100%;
+    max-width: 28rem;
+    margin: auto 0; /* Center vertically if content is smaller */
+}
+
+/* Remove sticky positioning that might interfere with scrolling */
+#sessionActiveStep > div:last-child {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+    /* Remove sticky positioning */
+    position: relative;
+    bottom: auto;
+}
+
+/* Ensure all content is visible */
+.p-8 {
+    padding: 2rem;
+}
+
+/* Fix hidden content at bottom of modal */
+#sessionModal .hidden {
+    display: none !important;
+}
+
+/* Ensure timer section is always visible */
+.bg-blue-50.rounded-lg.p-4.mb-6 {
+    margin-bottom: 1.5rem;
+}
+
+/* Fix spacing for better scroll experience */
+#sessionActiveStep > * {
+    margin-bottom: 1rem;
+}
+
+#sessionActiveStep > *:last-child {
+    margin-bottom: 0;
+}

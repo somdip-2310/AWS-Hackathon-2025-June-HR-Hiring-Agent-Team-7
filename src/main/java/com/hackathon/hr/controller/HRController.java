@@ -648,6 +648,62 @@ public class HRController {
             return ResponseEntity.status(500).body(response);
         }
     }
+    
+    @PostMapping("/api/session/claim-turn")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> claimTurn(@RequestParam("email") String email) {
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            // Check if it's actually their turn
+            if (!sessionManagementService.isUserTurn(email)) {
+                response.put("success", false);
+                response.put("message", "It's not your turn yet");
+                return ResponseEntity.badRequest().body(response);
+            }
+            
+            // Start their session
+            SessionManagementService.SessionStartResult result = 
+                sessionManagementService.startSession(email);
+            
+            response.put("success", result.isSuccess());
+            response.put("message", result.getMessage());
+            response.put("sessionId", result.getSessionId());
+            response.put("sessionDuration", 7);
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error claiming turn for email: {}", maskEmailForLogging(email), e);
+            response.put("success", false);
+            response.put("message", "Failed to claim turn");
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    @PostMapping("/api/session/skip-turn")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> skipTurn(@RequestParam("email") String email) {
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            sessionManagementService.handleTurnTimeout(email);
+            response.put("success", true);
+            response.put("message", "Turn skipped");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error skipping turn", e);
+            response.put("success", false);
+            response.put("error", "Failed to skip turn");
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    @PostMapping("/api/session/forfeit-turn")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> forfeitTurn(@RequestParam("email") String email) {
+        // Same implementation as skip-turn
+        return skipTurn(email);
+    }
 
     @GetMapping("/api/candidates/{candidateId}")
     @ResponseBody

@@ -449,7 +449,22 @@ public class SessionManagementService {
         
         return status;
     }
+    
+ // Add method to check if it's user's turn
+    public boolean isUserTurn(String email) {
+        QueuedUser nextUser = waitingQueue.peek();
+        return nextUser != null && nextUser.getEmail().equalsIgnoreCase(email);
+    }
 
+    // Add method to handle turn timeout
+    public void handleTurnTimeout(String email) {
+        QueuedUser nextUser = waitingQueue.peek();
+        if (nextUser != null && nextUser.getEmail().equalsIgnoreCase(email)) {
+            removeFromQueue(nextUser.getQueueId());
+            logger.info("User {} forfeited their turn due to timeout", maskEmail(email));
+        }
+    }
+    
     /**
      * Calculate estimated wait time based on queue position
      */

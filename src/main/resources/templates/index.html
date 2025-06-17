@@ -248,7 +248,13 @@
         <div class="bg-white rounded-xl shadow-lg p-8 mb-8 card-hover">
             <div class="flex items-center mb-6">
                 <div class="step-number" id="step1">1</div>
-                <h2 class="text-2xl font-semibold text-gray-800">Upload PDF Resume Files</h2>
+				<h2 class="text-2xl font-semibold text-gray-800">Upload PDF Resume Files</h2>
+				<div class="ml-auto">
+				    <span class="hidden bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-semibold" id="uploadStatusBadge">
+				        <i class="fas fa-upload mr-1"></i>
+				        Ready to Upload
+				    </span>
+				</div>
             </div>
             
             <div class="bg-red-50 border-2 border-dashed border-red-300 rounded-xl p-10 text-center hover:bg-red-100 transition-colors cursor-pointer"
@@ -268,7 +274,27 @@
                     PDF files only (Max 10MB each) • Multiple files supported
                 </p>
             </div>
-
+			<!-- Session Lock Notice (Hidden by default) -->
+			<div class="mt-6 bg-green-50 rounded-lg p-4 border border-green-200 hidden" id="uploadLockNotice">
+			    <div class="flex items-center">
+			        <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mr-3">
+			            <i class="fas fa-lock text-green-600"></i>
+			        </div>
+			        <div class="flex-1">
+			            <h4 class="font-semibold text-green-800 mb-1">Upload Section Locked</h4>
+			            <p class="text-sm text-green-700">
+			                Files have been uploaded successfully. The upload section is now locked for this session.
+			                Continue to job matching below.
+			            </p>
+			        </div>
+			        <div class="ml-4">
+			            <span class="bg-green-200 text-green-800 px-3 py-1 rounded-full text-xs font-semibold">
+			                <i class="fas fa-check-circle mr-1"></i>
+			                Session Active
+			            </span>
+			        </div>
+			    </div>
+			</div>
             <!-- Sample Resume Download Section -->
             <div class="mt-6 bg-blue-50 rounded-lg p-6 border border-blue-200">
                 <div class="flex items-center justify-between">
@@ -1095,6 +1121,7 @@
 					            </button>
 					        </div>
 					    </div>
+						<div id="waitingForClaimNotice" class="hidden"></div>
 					</div>
 		            
 		            <!-- Success Step -->
@@ -1134,7 +1161,59 @@
 					        Start Demo
 					    </button>
 					</div>
-		            
+					<!-- Add this new step inside your sessionModal, after the other steps -->
+
+					<!-- Your Turn Step -->
+					<div id="yourTurnStep" class="p-8 hidden">
+					    <div class="text-center mb-6">
+					        <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+					            <i class="fas fa-bell text-green-600 text-3xl"></i>
+					        </div>
+					        <h2 class="text-3xl font-bold text-gray-800 mb-2">It's Your Turn!</h2>
+					        <p class="text-gray-600 text-lg">You have 2 minutes to start your session</p>
+					    </div>
+					    
+					    <div class="bg-green-50 rounded-lg p-6 mb-6 border-2 border-green-200">
+					        <div class="text-center">
+					            <div class="text-4xl font-bold text-green-600 mb-2" id="turnCountdown">2:00</div>
+					            <div class="text-sm text-green-700">Time remaining to claim your turn</div>
+					        </div>
+					        
+					        <div class="mt-4 bg-white rounded-lg p-4">
+					            <p class="text-sm text-gray-700 mb-2">
+					                <i class="fas fa-info-circle text-blue-500 mr-2"></i>
+					                <strong>What happens next:</strong>
+					            </p>
+					            <ul class="text-sm text-gray-600 space-y-1 ml-6">
+					                <li>• Click "Start My Session" to begin</li>
+					                <li>• You'll get 7 minutes of exclusive access</li>
+					                <li>• Your turn will be skipped if not claimed in time</li>
+					            </ul>
+					        </div>
+					    </div>
+					    
+					    <div class="flex space-x-3">
+					        <button onclick="SessionManager.skipMyTurn()" 
+					                class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 px-4 rounded-lg transition duration-300">
+					            <i class="fas fa-forward mr-2"></i>
+					            Skip My Turn
+					        </button>
+					        <button onclick="SessionManager.claimTurn()" 
+					                class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300 animate-pulse">
+					            <i class="fas fa-play mr-2"></i>
+					            Start My Session
+					        </button>
+					    </div>
+					    
+					    <div class="mt-4 text-center">
+					        <p class="text-xs text-gray-500">
+					            Others are waiting. Please decide quickly.
+					        </p>
+					    </div>
+					</div>
+
+					<!-- Add this notice div to the sessionActiveStep -->
+					<div id="waitingForClaimNotice" class="hidden"></div>
 		            <!-- Error Step -->
 		            <div id="errorStep" class="p-8 hidden">
 		                <div class="text-center mb-6">

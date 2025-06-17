@@ -13,6 +13,8 @@ let cleanupCheckInterval = null;
 let userEmail = null;
 let userQueueId = null;
 let queueCheckInterval = null;
+let uploadSessionActive = false;
+let hasUploadedInCurrentSession = false;
 
 // ========================================
 // INITIALIZATION
@@ -245,7 +247,13 @@ function handleFileSelect() {
     if (!currentSessionId) {
         alert('Please start a session first');
         SessionManager.showModal();
-        // Clear the file input
+        document.getElementById('resumeFiles').value = '';
+        return;
+    }
+    
+    // Check if upload is already in progress
+    if (uploadSessionActive) {
+        alert('Please wait for current upload to complete before selecting new files');
         document.getElementById('resumeFiles').value = '';
         return;
     }
@@ -281,7 +289,11 @@ function createFileProgressItem(fileName, fileId) {
 
 async function uploadFiles(files) {
     console.log('Starting upload of', files.length, 'files');
-    
+	console.log('Starting upload of', files.length, 'files');
+	    
+	    // Immediately freeze upload functionality
+	    freezeUploadSection();
+	    uploadSessionActive = true;
     const progressSection = document.getElementById('uploadProgressSection');
     const fileProgressList = document.getElementById('fileProgressList');
     const resultsDiv = document.getElementById('uploadResults');
@@ -390,7 +402,10 @@ async function uploadFiles(files) {
     // Show summary
     if (successCount > 0) {
         uploadedInSession = true;
-        
+		hasUploadedInCurrentSession = true;
+		        
+		        // Keep upload section frozen
+		        maintainUploadFreeze();
         const summaryDiv = document.createElement('div');
         summaryDiv.className = 'mt-6 p-6 bg-gradient-to-r from-green-50 to-green-100 rounded-xl border-2 border-green-200 fade-in shadow-lg';
         summaryDiv.innerHTML = `
@@ -421,6 +436,8 @@ async function uploadFiles(files) {
         setTimeout(async () => {
             await loadCandidates();
             console.log('Candidates reloaded after upload');
+			// Auto-scroll to job selection section
+			            scrollToJobSelection();
         }, 2000); // 2 second delay to ensure backend processing is complete
     }
     
@@ -658,6 +675,8 @@ async function clearAllCandidates() {
             displayCandidates();
             updateStatistics();
             uploadedInSession = false;
+			// Reset upload state
+			            resetUploadState();
             updateButtonStates();
             
             // Clear match results
@@ -755,16 +774,45 @@ function clearResults() {
 // ========================================
 // SESSION MANAGEMENT
 // ========================================
+// Replace the entire SessionManager object in main.js with this consolidated fix
+
 const SessionManager = {
-    
+    // Add state tracking
+    modalState: {
+        isVisible: false,
+        currentStep: null,
+        isUserInteracting: false,
+        lastInteraction: null
+    },
+	queueTimeouts: {
+	    userTurnTimeout: null,
+	    userTurnStartTime: null,
+	    maxWaitTime: 120000, // 2 minutes to claim your turn
+	},
     init() {
         this.setupEventListeners();
         this.checkInitialSessionStatus();
-        this.startCleanupMonitoring();
+		this.requestNotificationPermission(); 
+        // Only start cleanup monitoring if user has an active session
+        if (currentSessionId) {
+            this.startCleanupMonitoring();
+        }
     },
 
-    // Add these methods inside the SessionManager object:
+    // Track user interactions to prevent unwanted modal hiding
+    trackInteraction() {
+        this.modalState.isUserInteracting = true;
+        this.modalState.lastInteraction = Date.now();
+        
+        // Reset interaction flag after 2 seconds of inactivity
+        clearTimeout(this.interactionTimeout);
+        this.interactionTimeout = setTimeout(() => {
+            this.modalState.isUserInteracting = false;
+        }, 2000);
+    },
+
     showArchitectureInfo() {
+        this.trackInteraction();
         // Hide all current steps
         ['emailStep', 'verificationStep', 'sessionActiveStep', 'successStep', 'errorStep'].forEach(id => {
             const element = document.getElementById(id);
@@ -781,62 +829,111 @@ const SessionManager = {
     },
 
     hideArchitectureInfo() {
+        this.trackInteraction();
         document.getElementById('architectureInfoStep').classList.add('hidden');
         this.showStep('email');
     },
     
     setupEventListeners() {
+        // Track interactions on all input fields
+        ['emailInput', 'codeInput'].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('focus', () => this.trackInteraction());
+                element.addEventListener('input', () => this.trackInteraction());
+            }
+        });
+
+        // Track modal clicks
+        const modal = document.getElementById('sessionModal');
+        if (modal) {
+            modal.addEventListener('click', () => this.trackInteraction());
+        }
+
         // Email form submission
         document.getElementById('emailForm').addEventListener('submit', (e) => {
             e.preventDefault();
+            this.trackInteraction();
             this.requestVerificationCode();
         });
         
         // Verification form submission
         document.getElementById('verificationForm').addEventListener('submit', (e) => {
             e.preventDefault();
+            this.trackInteraction();
             this.verifyCode();
         });
         
         // Navigation buttons
         document.getElementById('backToEmailBtn').addEventListener('click', () => {
+            this.trackInteraction();
             this.showStep('email');
         });
         
         document.getElementById('resendCodeBtn').addEventListener('click', () => {
+            this.trackInteraction();
             this.requestVerificationCode();
         });
         
         document.getElementById('refreshStatusBtn').addEventListener('click', () => {
+            this.trackInteraction();
             this.checkSessionStatus();
         });
         
         document.getElementById('startDemoBtn').addEventListener('click', () => {
+            this.trackInteraction();
             this.startDemo();
         });
         
         document.getElementById('tryAgainBtn').addEventListener('click', () => {
+            this.trackInteraction();
             this.showStep('email');
         });
         
         document.getElementById('endSessionBtn').addEventListener('click', () => {
+            this.trackInteraction();
             this.endSession();
         });
         
-        // Auto-check session status every 30 seconds
+        // Auto-check session status - ONLY when appropriate
         setInterval(() => {
+            // Don't check if user is actively interacting with modal
+            if (this.modalState.isUserInteracting) {
+                console.log('User is interacting, skipping session check');
+                return;
+            }
+            
+            // Don't check if modal is showing email/verification steps
+            if (this.modalState.isVisible && 
+                (this.modalState.currentStep === 'email' || 
+                 this.modalState.currentStep === 'verification' ||
+                 this.modalState.currentStep === 'architecture')) {
+                console.log('Modal is in input state, skipping session check');
+                return;
+            }
+            
             if (currentSessionId) {
                 this.validateCurrentSession();
-            } else {
+            } else if (this.modalState.currentStep === 'sessionActive') {
+                // Only check if we're showing the waiting screen
                 this.checkSessionStatus();
             }
         }, 30000);
     },
     
-    // NEW: Start monitoring for cleanup requirements
     startCleanupMonitoring() {
-        // Check every 15 seconds for cleanup requirements
+        // Clear any existing interval
+        if (cleanupCheckInterval) {
+            clearInterval(cleanupCheckInterval);
+        }
+        
+        // Only monitor cleanup when there's an active session
         cleanupCheckInterval = setInterval(async () => {
+            // Skip if user is interacting
+            if (this.modalState.isUserInteracting) {
+                return;
+            }
+            
             try {
                 const response = await fetch('/api/session/cleanup-check');
                 const data = await response.json();
@@ -850,10 +947,26 @@ const SessionManager = {
         }, 15000);
     },
 
-    // Add queue management methods
+    // FIX 2: Modified joinQueue to show email verification page
     joinQueue() {
         if (!userEmail) {
-            alert('Please verify your email first');
+            // Instead of just showing alert, navigate to email verification
+            console.log('No email found, redirecting to email verification');
+            
+            // Show the modal if hidden
+            this.showModal();
+            
+            // Navigate to email step
+            this.showStep('email');
+            
+            // Focus on email input
+            setTimeout(() => {
+                const emailInput = document.getElementById('emailInput');
+                if (emailInput) {
+                    emailInput.focus();
+                }
+            }, 100);
+            
             return;
         }
         
@@ -879,12 +992,16 @@ const SessionManager = {
     },
 
     startQueueMonitoring() {
-        // Check queue status every 10 seconds
+        // Clear existing interval
         if (queueCheckInterval) {
             clearInterval(queueCheckInterval);
         }
         
         queueCheckInterval = setInterval(() => {
+            // Don't check if user is interacting
+            if (this.modalState.isUserInteracting) {
+                return;
+            }
             this.checkQueueStatus();
         }, 10000);
         
@@ -892,18 +1009,28 @@ const SessionManager = {
         this.checkQueueStatus();
     },
 
-    async checkQueueStatus() {
-        try {
-            const response = await fetch('/api/session/queue-status');
-            const data = await response.json();
-            
-            if (data.success) {
-                this.updateQueueDisplay(data);
-            }
-        } catch (error) {
-            console.error('Error checking queue status:', error);
-        }
-    },
+	async checkQueueStatus() {
+	        try {
+	            const response = await fetch('/api/session/queue-status');
+	            const data = await response.json();
+	            
+	            if (data.success) {
+	                this.updateQueueDisplay(data);
+	                
+	                // Check if it's this user's turn
+	                if (data.isYourTurn && userEmail) {
+	                    this.handleYourTurn();
+	                }
+	                
+	                // Check if someone ahead hasn't claimed their turn
+	                if (data.waitingForUserToClaim) {
+	                    this.handleWaitingForClaim(data);
+	                }
+	            }
+	        } catch (error) {
+	            console.error('Error checking queue status:', error);
+	        }
+	    },
 
     updateQueueDisplay(queueData) {
         // Update queue length
@@ -957,8 +1084,210 @@ const SessionManager = {
             }
         }
     },
+	handleYourTurn() {
+	        // Show notification that it's their turn
+	        this.showTurnNotification();
+	        
+	        // Start timeout for this user
+	        if (!this.queueTimeouts.userTurnTimeout) {
+	            this.queueTimeouts.userTurnStartTime = Date.now();
+	            this.queueTimeouts.userTurnTimeout = setTimeout(() => {
+	                this.forfeitTurn();
+	            }, this.queueTimeouts.maxWaitTime);
+	        }
+	    },
+	    
+	    // Show notification when it's user's turn
+	    showTurnNotification() {
+	        // Update modal to show it's their turn
+	        const modal = document.getElementById('sessionModal');
+	        if (modal.classList.contains('hidden')) {
+	            this.showModal();
+	        }
+	        
+	        // Show special "Your Turn!" screen
+	        this.showStep('yourTurn');
+	        
+	        // Play sound notification if possible
+	        this.playNotificationSound();
+	        
+	        // Show browser notification if permitted
+	        if (Notification.permission === 'granted') {
+	            new Notification('Your turn for HR Demo!', {
+	                body: 'You have 2 minutes to start your session.',
+	                icon: '/favicon.ico'
+	            });
+	        }
+	    },
+		
+		handleWaitingForClaim(data) {
+		        // Update display to show someone hasn't claimed
+		        const waitingNotice = document.getElementById('waitingForClaimNotice');
+		        if (waitingNotice) {
+		            waitingNotice.classList.remove('hidden');
+		            waitingNotice.innerHTML = `
+		                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+		                    <p class="text-sm text-yellow-800">
+		                        <i class="fas fa-clock mr-2"></i>
+		                        Waiting for ${data.waitingForEmail || 'user'} to claim their turn...
+		                        <br>
+		                        <span class="text-xs">Auto-skip in ${data.remainingClaimTime || '2:00'}</span>
+		                    </p>
+		                </div>
+		            `;
+		        }
+		    },
+		    
+		    // Forfeit turn if user doesn't claim
+		    async forfeitTurn() {
+		        console.log('User forfeited their turn by timeout');
+		        
+		        try {
+		            await fetch('/api/session/forfeit-turn', {
+		                method: 'POST',
+		                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		                body: `email=${encodeURIComponent(userEmail)}`
+		            });
+		            
+		            // Clear timeout
+		            if (this.queueTimeouts.userTurnTimeout) {
+		                clearTimeout(this.queueTimeouts.userTurnTimeout);
+		                this.queueTimeouts.userTurnTimeout = null;
+		            }
+		            
+		            // Show message
+		            this.showError('Your turn was skipped due to timeout. Please rejoin the queue.');
+		            
+		            // Reset to initial state
+		            setTimeout(() => {
+		                this.checkSessionStatus();
+		            }, 3000);
+		            
+		        } catch (error) {
+		            console.error('Error forfeiting turn:', error);
+		        }
+		    },
+		    
+		    // Play notification sound
+		    playNotificationSound() {
+		        try {
+		            const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSl+zPLZiEAJFGS56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHQctitXyvnErBCh+zPLZiEAJFGS56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKFGO56+yfVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVREKR6Hn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVBELTaPn7bllHgg2k9n1w3UnBi56yuzLjjwKF2S56+2hVA==');
+		            audio.play();
+		        } catch (e) {
+		            console.log('Could not play notification sound');
+		        }
+		    },
+		    
+		    // Request notification permission on init
+		    requestNotificationPermission() {
+		        if ('Notification' in window && Notification.permission === 'default') {
+		            Notification.requestPermission();
+		        }
+		    },
+			// User claims their turn
+			async claimTurn() {
+			    console.log('User claiming their turn');
+			    
+			    // Clear any timeout
+			    if (this.queueTimeouts.userTurnTimeout) {
+			        clearTimeout(this.queueTimeouts.userTurnTimeout);
+			        this.queueTimeouts.userTurnTimeout = null;
+			    }
+			    
+			    try {
+			        const response = await fetch('/api/session/claim-turn', {
+			            method: 'POST',
+			            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			            body: `email=${encodeURIComponent(userEmail)}`
+			        });
+			        
+			        const data = await response.json();
+			        
+			        if (data.success && data.sessionId) {
+			            // Successfully claimed - start session
+			            currentSessionId = data.sessionId;
+			            document.getElementById('sessionIdDisplay').textContent = data.sessionId.substring(0, 8) + '...';
+			            this.showStep('success');
+			            this.startSessionTimer(data.sessionDuration * 60);
+			            this.startCleanupMonitoring();
+			        } else {
+			            this.showError(data.message || 'Failed to claim turn');
+			        }
+			    } catch (error) {
+			        console.error('Error claiming turn:', error);
+			        this.showError('Failed to start session');
+			    }
+			},
 
+			// User voluntarily skips their turn
+			async skipMyTurn() {
+			    if (confirm('Are you sure you want to skip your turn? You\'ll need to rejoin the queue.')) {
+			        console.log('User voluntarily skipping turn');
+			        
+			        // Clear timeout
+			        if (this.queueTimeouts.userTurnTimeout) {
+			            clearTimeout(this.queueTimeouts.userTurnTimeout);
+			            this.queueTimeouts.userTurnTimeout = null;
+			        }
+			        
+			        try {
+			            await fetch('/api/session/skip-turn', {
+			                method: 'POST',
+			                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			                body: `email=${encodeURIComponent(userEmail)}`
+			            });
+			            
+			            // Show session active screen again
+			            this.checkSessionStatus();
+			            
+			        } catch (error) {
+			            console.error('Error skipping turn:', error);
+			        }
+			    }
+			},
+
+			// Update the timer display for turn countdown
+			startTurnCountdown() {
+			    let remainingSeconds = 120; // 2 minutes
+			    
+			    const updateCountdown = () => {
+			        const minutes = Math.floor(remainingSeconds / 60);
+			        const seconds = remainingSeconds % 60;
+			        const display = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+			        
+			        const countdownEl = document.getElementById('turnCountdown');
+			        if (countdownEl) {
+			            countdownEl.textContent = display;
+			            
+			            // Change color as time runs out
+			            if (remainingSeconds <= 30) {
+			                countdownEl.classList.remove('text-green-600');
+			                countdownEl.classList.add('text-red-600');
+			            } else if (remainingSeconds <= 60) {
+			                countdownEl.classList.remove('text-green-600');
+			                countdownEl.classList.add('text-yellow-600');
+			            }
+			        }
+			        
+			        if (remainingSeconds <= 0) {
+			            clearInterval(this.turnCountdownInterval);
+			            return;
+			        }
+			        
+			        remainingSeconds--;
+			    };
+			    
+			    // Clear any existing interval
+			    if (this.turnCountdownInterval) {
+			        clearInterval(this.turnCountdownInterval);
+			    }
+			    
+			    updateCountdown(); // Initial call
+			    this.turnCountdownInterval = setInterval(updateCountdown, 1000);
+			},
+		
     showSessionActiveStep(data) {
+        this.modalState.currentStep = 'sessionActive';
         document.getElementById('currentUserEmail').textContent = data.userEmail || 'Anonymous User';
         
         // Start countdown timer for waiting
@@ -974,9 +1303,14 @@ const SessionManager = {
         this.showModal();
     },
 
-    // NEW: Handle data cleanup when session expires
     handleDataCleanup(cleanupData) {
         console.log('Data cleanup triggered:', cleanupData);
+        
+        // Don't cleanup if user is actively using the system
+        if (this.modalState.isUserInteracting && currentSessionId) {
+            console.log('User is active, postponing cleanup');
+            return;
+        }
         
         // Reset current session
         this.cleanup();
@@ -989,72 +1323,13 @@ const SessionManager = {
             this.resetDemoState();
         }, 2000);
     },
-    
-    // NEW: Reset demo to initial state
-    resetDemoState() {
-        // Reset all UI elements to initial state
-        currentCandidates = [];
-        uploadedInSession = false;
-        
-        // Clear match results
-        const matchResults = document.getElementById('matchResults');
-        if (matchResults) matchResults.classList.add('hidden');
-        
-        // Clear upload progress
-        const uploadProgressSection = document.getElementById('uploadProgressSection');
-        if (uploadProgressSection) uploadProgressSection.classList.add('hidden');
-        
-        const uploadResults = document.getElementById('uploadResults');
-        if (uploadResults) uploadResults.innerHTML = '';
-        
-        // Reset step indicators
-        const step1 = document.getElementById('step1');
-        const step2 = document.getElementById('step2');
-        if (step1) step1.classList.remove('completed');
-        if (step2) step2.classList.remove('completed');
-        
-        // Reset file input
-        const resumeFiles = document.getElementById('resumeFiles');
-        if (resumeFiles) resumeFiles.value = '';
-        
-        // Force reload candidates display
-        displayCandidates();
-        updateStatistics();
-        updateButtonStates();
-        
-        // Re-enable reading sections (they should always be accessible)
-        this.enableReadingSections();
-        
-        console.log('Demo state reset complete');
-    },
-    
-    // NEW: Show cleanup notice
-    showCleanupNotice(cleanupData) {
-        const notice = document.createElement('div');
-        notice.className = 'fixed top-20 left-1/2 transform -translate-x-1/2 bg-blue-500 text-white rounded-lg shadow-lg p-4 z-50';
-        notice.innerHTML = `
-            <div class="flex items-center space-x-3">
-                <i class="fas fa-sync-alt fa-spin text-2xl"></i>
-                <div>
-                    <div class="font-bold">Demo Reset Complete</div>
-                    <div class="text-sm">Previous session ended. ${cleanupData.candidatesCleared} candidates cleared.</div>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(notice);
-        
-        // Remove notice after 5 seconds
-        setTimeout(() => {
-            if (notice.parentNode) {
-                notice.parentNode.removeChild(notice);
-            }
-        }, 5000);
-    },
-    
+
     async checkInitialSessionStatus() {
         try {
             const response = await fetch('/api/session/status');
             const data = await response.json();
+            
+            console.log('Initial session status:', data);
             
             if (data.sessionExpired && data.dataCleanupRequired) {
                 this.handleDataCleanup(data);
@@ -1064,7 +1339,7 @@ const SessionManager = {
                 // Another user has active session
                 this.showSessionActiveStep(data);
             } else {
-                // No active session, show email entry but don't restrict reading
+                // No active session, show email entry
                 this.enableReadingSections();
                 this.showModal();
             }
@@ -1076,27 +1351,132 @@ const SessionManager = {
     },
     
     async checkSessionStatus() {
+        // Don't check if user is actively using the modal
+        if (this.modalState.isUserInteracting) {
+            console.log('Skipping session check - user is interacting');
+            return;
+        }
+        
         try {
             const response = await fetch('/api/session/status');
             const data = await response.json();
+            
+            console.log('Session status check:', data);
             
             if (data.sessionExpired && data.dataCleanupRequired) {
                 this.handleDataCleanup(data);
                 return;
             }
             
-            if (data.hasActiveSession && !data.available) {
-                this.showSessionActiveStep(data);
-            } else {
-                this.showStep('email');
+            // Only update modal if we're in the waiting state
+            if (this.modalState.currentStep === 'sessionActive') {
+                if (data.hasActiveSession && !data.available) {
+                    this.updateSessionActiveDisplay(data);
+                } else {
+                    // Session is now available
+                    this.showStep('email');
+                }
             }
         } catch (error) {
             console.error('Error checking session status:', error);
-            this.showError('Failed to check session status');
+            // Don't show error if user is interacting
+            if (!this.modalState.isUserInteracting) {
+                this.showError('Failed to check session status');
+            }
         }
     },
     
+    updateSessionActiveDisplay(data) {
+        // Update the display without changing steps
+        if (document.getElementById('currentUserEmail')) {
+            document.getElementById('currentUserEmail').textContent = data.userEmail || 'Anonymous User';
+        }
+        
+        // Update timer if needed
+        if (data.remainingSeconds) {
+            this.updateWaitingTimer(data.remainingSeconds);
+        }
+        
+        // Update queue information
+        this.updateQueueDisplay(data);
+    },
+    
+    updateWaitingTimer(seconds) {
+        // Just update the display, don't restart the whole timer
+        const minutes = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        const timeString = `${minutes}:${secs.toString().padStart(2, '0')}`;
+        
+        const remainingTimeEl = document.getElementById('remainingTime');
+        if (remainingTimeEl) {
+            remainingTimeEl.textContent = timeString;
+        }
+    },
+
+    showModal() {
+        console.log('Showing modal');
+        this.modalState.isVisible = true;
+        document.getElementById('sessionModal').classList.remove('hidden');
+        
+        // Default to email step if not specified
+        if (!this.modalState.currentStep) {
+            this.showStep('email');
+        }
+    },
+    
+    hideModal() {
+        console.log('hideModal called - forcing hide');
+        this.modalState.isVisible = false;
+        this.modalState.currentStep = null;
+        this.modalState.isUserInteracting = false;
+        document.getElementById('sessionModal').classList.add('hidden');
+    },
+    
+    showStep(step) {
+        console.log('Showing step:', step);
+        this.modalState.currentStep = step;
+        
+        // Hide all steps INCLUDING architectureInfoStep
+        ['emailStep', 'verificationStep', 'sessionActiveStep', 'successStep', 'errorStep', 'architectureInfoStep','yourTurnStep'].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.classList.add('hidden');
+            }
+        });
+        
+        // Show requested step
+        const stepMap = {
+            'email': 'emailStep',
+            'verification': 'verificationStep', 
+            'sessionActive': 'sessionActiveStep',
+            'success': 'successStep',
+            'error': 'errorStep',
+            'architecture': 'architectureInfoStep',
+			'yourTurn': 'yourTurnStep'
+        };
+        
+        const stepElement = document.getElementById(stepMap[step]);
+        if (stepElement) {
+            stepElement.classList.remove('hidden');
+        }
+        
+        // Clear inputs when going back to email
+        if (step === 'email') {
+            const emailInput = document.getElementById('emailInput');
+            const codeInput = document.getElementById('codeInput');
+            if (emailInput) emailInput.value = '';
+            if (codeInput) codeInput.value = '';
+        }
+    },
+    
+    showError(message) {
+        console.log('Showing error:', message);
+        document.getElementById('errorMessage').textContent = message;
+        this.showStep('error');
+    },
+    
     async requestVerificationCode() {
+        this.trackInteraction();
         const email = document.getElementById('emailInput').value.trim();
         if (!email) return;
         
@@ -1131,51 +1511,129 @@ const SessionManager = {
         }
     },
     
-    async verifyCode() {
-        const code = document.getElementById('codeInput').value.trim();
-        if (!code || !userEmail) return;
-        
-        const btn = document.getElementById('verifyCodeBtn');
-        const originalText = btn.innerHTML;
-        
-        try {
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Verifying...';
-            btn.disabled = true;
-            
-            const response = await fetch('/api/session/verify-email', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `email=${encodeURIComponent(userEmail)}&code=${encodeURIComponent(code)}`
-            });
-            
-            const data = await response.json();
-            
-            if (data.success && data.sessionId) {
-                currentSessionId = data.sessionId;
-                console.log('Session started with ID:', currentSessionId); // Debug log
-                document.getElementById('sessionIdDisplay').textContent = data.sessionId.substring(0, 8) + '...';
-                this.showStep('success');
-                this.startSessionTimer(data.sessionDuration * 60); // Convert to seconds
-            } else {
-                this.showError(data.message);
-            }
-        } catch (error) {
-            console.error('Error verifying code:', error);
-            this.showError('Failed to verify code');
-        } finally {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-        }
-    },
+	async verifyCode() {
+	    this.trackInteraction();
+	    const code = document.getElementById('codeInput').value.trim();
+	    if (!code || !userEmail) return;
+	    
+	    const btn = document.getElementById('verifyCodeBtn');
+	    const originalText = btn.innerHTML;
+	    
+	    try {
+	        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Verifying...';
+	        btn.disabled = true;
+	        
+	        const response = await fetch('/api/session/verify-email', {
+	            method: 'POST',
+	            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+	            body: `email=${encodeURIComponent(userEmail)}&code=${encodeURIComponent(code)}`
+	        });
+	        
+	        const data = await response.json();
+	        console.log('Verify response:', data, 'Status:', response.status);
+	        
+	        // Handle successful session start
+	        if (response.ok && data.success && data.sessionId) {
+	            currentSessionId = data.sessionId;
+	            console.log('Session started with ID:', currentSessionId);
+	            document.getElementById('sessionIdDisplay').textContent = data.sessionId.substring(0, 8) + '...';
+	            this.showStep('success');
+	            this.startSessionTimer(data.sessionDuration * 60);
+	            this.startCleanupMonitoring();
+	        } 
+	        // Handle 400 error - user was added to queue
+	        else if (response.status === 400 && data.message && 
+	                (data.message.includes('queue') || 
+	                 data.message.includes('position') || 
+	                 data.message.includes('Session unavailable'))) {
+	            console.log('User added to queue');
+	            
+	            // Show success message with refresh instruction
+	            const verificationStep = document.getElementById('verificationStep');
+	            if (verificationStep) {
+	                verificationStep.innerHTML = `
+	                    <div class="p-8">
+	                        <div class="text-center mb-6">
+	                            <div class="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+	                                <i class="fas fa-check-circle text-orange-600 text-2xl"></i>
+	                            </div>
+	                            <h2 class="text-2xl font-bold text-gray-800 mb-2">Successfully Added to Queue!</h2>
+	                            <p class="text-gray-600 mb-4">You've been added to the waiting queue.</p>
+	                            <div class="bg-orange-50 rounded-lg p-4 mb-6 border border-orange-200">
+	                                <p class="text-orange-800 font-semibold mb-2">
+	                                    <i class="fas fa-sync-alt mr-2"></i>
+	                                    Please refresh the page to see your queue position
+	                                </p>
+	                                <p class="text-sm text-orange-700">
+	                                    Click the button below or press F5 to refresh
+	                                </p>
+	                            </div>
+	                        </div>
+	                        <button onclick="window.location.reload()" 
+	                                class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 flex items-center justify-center">
+	                            <i class="fas fa-sync-alt mr-2"></i>
+	                            Refresh Page
+	                        </button>
+	                    </div>
+	                `;
+	            }
+	        }
+	        // Handle verification errors
+	        else if (!response.ok && data.message && 
+	                (data.message.includes('Invalid verification') || 
+	                 data.message.includes('expired') ||
+	                 data.message.includes('No verification code found'))) {
+	            this.showError(data.message);
+	        }
+	        // Handle other cases
+	        else {
+	            this.showError(data.message || 'Verification failed. Please try again.');
+	        }
+	    } catch (error) {
+	        console.error('Error verifying code:', error);
+	        this.showError('Failed to verify code. Please try again.');
+	    } finally {
+	        setTimeout(() => {
+	            btn.innerHTML = originalText;
+	            btn.disabled = false;
+	        }, 100);
+	    }
+	},
     
+    // FIX 1: Force modal to close when Start Demo is clicked
     startDemo() {
-        this.hideModal();
+        console.log('Starting demo - forcing modal close');
+        this.trackInteraction();
+        
+        // Force hide the modal by directly manipulating DOM
+        const modal = document.getElementById('sessionModal');
+        if (modal) {
+            modal.classList.add('hidden');
+            modal.style.display = 'none'; // Extra insurance
+        }
+        
+        // Reset modal state completely
+        this.modalState.isVisible = false;
+        this.modalState.currentStep = null;
+        this.modalState.isUserInteracting = false;
+        
+        // Show session timer
         this.showSessionTimer();
+        
+        // Enable upload controls
         this.enableUploadControls();
+        
+        // Enable reading sections
         this.enableReadingSections();
         
-        // Scroll to "How It Works" section
+        // Small delay before scrolling to ensure modal is hidden
         setTimeout(() => {
+            // Remove any lingering modal styles
+            const modal = document.getElementById('sessionModal');
+            if (modal && !modal.classList.contains('hidden')) {
+                modal.classList.add('hidden');
+            }
+            
             const howItWorksSection = document.querySelector('.bg-blue-50.rounded-xl.p-6.mb-8');
             if (howItWorksSection) {
                 howItWorksSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1184,6 +1642,7 @@ const SessionManager = {
     },
     
     async endSession() {
+        this.trackInteraction();
         if (!currentSessionId) return;
         
         try {
@@ -1231,53 +1690,6 @@ const SessionManager = {
         }, 5000);
     },
     
-    showModal() {
-        document.getElementById('sessionModal').classList.remove('hidden');
-        this.showStep('email');
-    },
-    
-    hideModal() {
-        document.getElementById('sessionModal').classList.add('hidden');
-    },
-    
-    showStep(step) {
-        // Hide all steps INCLUDING architectureInfoStep
-        ['emailStep', 'verificationStep', 'sessionActiveStep', 'successStep', 'errorStep', 'architectureInfoStep'].forEach(id => {
-            const element = document.getElementById(id);
-            if (element) {
-                element.classList.add('hidden');
-            }
-        });
-        
-        // Show requested step
-        const stepMap = {
-            'email': 'emailStep',
-            'verification': 'verificationStep', 
-            'sessionActive': 'sessionActiveStep',
-            'success': 'successStep',
-            'error': 'errorStep',
-            'architecture': 'architectureInfoStep'  // Add this line
-        };
-        
-        const stepElement = document.getElementById(stepMap[step]);
-        if (stepElement) {
-            stepElement.classList.remove('hidden');
-        }
-        
-        // Clear inputs when going back to email
-        if (step === 'email') {
-            const emailInput = document.getElementById('emailInput');
-            const codeInput = document.getElementById('codeInput');
-            if (emailInput) emailInput.value = '';
-            if (codeInput) codeInput.value = '';
-        }
-    },
-    
-    showError(message) {
-        document.getElementById('errorMessage').textContent = message;
-        this.showStep('error');
-    },
-    
     startSessionTimer(seconds) {
         if (sessionTimerInterval) {
             clearInterval(sessionTimerInterval);
@@ -1291,8 +1703,11 @@ const SessionManager = {
             const timeString = `${minutes}:${secs.toString().padStart(2, '0')}`;
             
             // Update both timer displays
-            document.getElementById('sessionTimer').textContent = timeString;
-            document.getElementById('topTimerDisplay').textContent = timeString;
+            const sessionTimer = document.getElementById('sessionTimer');
+            const topTimer = document.getElementById('topTimerDisplay');
+            
+            if (sessionTimer) sessionTimer.textContent = timeString;
+            if (topTimer) topTimer.textContent = timeString;
             
             if (remainingSeconds <= 0) {
                 this.sessionExpired();
@@ -1318,7 +1733,10 @@ const SessionManager = {
             const secs = remainingSeconds % 60;
             const timeString = `${minutes}:${secs.toString().padStart(2, '0')}`;
             
-            document.getElementById('remainingTime').textContent = timeString;
+            const remainingTimeEl = document.getElementById('remainingTime');
+            if (remainingTimeEl) {
+                remainingTimeEl.textContent = timeString;
+            }
             
             if (remainingSeconds <= 0) {
                 this.checkSessionStatus(); // Check if now available
@@ -1348,7 +1766,6 @@ const SessionManager = {
         this.enableReadingSections();
     },
     
-    // NEW: Always enable reading sections (segregated access)
     enableReadingSections() {
         // Enable all informational/reading sections
         const readingSections = [
@@ -1441,56 +1858,109 @@ const SessionManager = {
     },
     
     cleanup() {
+        console.log('Cleanup called');
+		// Reset upload state
+		        resetUploadState();
         currentSessionId = null;
         userEmail = null;
-        userQueueId = null;  // Clear queue ID
+        userQueueId = null;
         
-        // Clear session timer
+        // Clear timers
         if (sessionTimerInterval) {
             clearInterval(sessionTimerInterval);
             sessionTimerInterval = null;
         }
         
-        // Clear cleanup check interval
         if (cleanupCheckInterval) {
             clearInterval(cleanupCheckInterval);
             cleanupCheckInterval = null;
         }
         
-        // Clear queue check interval
         if (queueCheckInterval) {
             clearInterval(queueCheckInterval);
             queueCheckInterval = null;
         }
         
-        // Hide UI elements
-        this.hideModal();
+        // Hide session timer
         this.hideSessionTimer();
         
-        // Clear any queue-related UI states
-        const queueInfo = document.getElementById('queueInfo');
-        if (queueInfo) {
-            const waitingList = document.getElementById('waitingList');
-            if (waitingList) {
-                waitingList.innerHTML = '';
+        // Force hide modal
+        this.hideModal();
+        
+        // Clear queue UI
+        const waitingList = document.getElementById('waitingList');
+        if (waitingList) waitingList.innerHTML = '';
+        
+        const queueLength = document.getElementById('queueLength');
+        if (queueLength) queueLength.textContent = '0';
+        
+        const estimatedWait = document.getElementById('estimatedWait');
+        if (estimatedWait) estimatedWait.textContent = 'calculating...';
+    },
+    
+    resetDemoState() {
+        // Reset all UI elements to initial state
+        currentCandidates = [];
+        uploadedInSession = false;
+        
+        // Clear match results
+        const matchResults = document.getElementById('matchResults');
+        if (matchResults) matchResults.classList.add('hidden');
+        
+        // Clear upload progress
+        const uploadProgressSection = document.getElementById('uploadProgressSection');
+        if (uploadProgressSection) uploadProgressSection.classList.add('hidden');
+        
+        const uploadResults = document.getElementById('uploadResults');
+        if (uploadResults) uploadResults.innerHTML = '';
+        
+        // Reset step indicators
+        const step1 = document.getElementById('step1');
+        const step2 = document.getElementById('step2');
+        if (step1) step1.classList.remove('completed');
+        if (step2) step2.classList.remove('completed');
+        
+        // Reset file input
+        const resumeFiles = document.getElementById('resumeFiles');
+        if (resumeFiles) resumeFiles.value = '';
+        
+        // Force reload candidates display
+        displayCandidates();
+        updateStatistics();
+        updateButtonStates();
+        
+        // Re-enable reading sections
+        this.enableReadingSections();
+        
+        console.log('Demo state reset complete');
+    },
+    
+    showCleanupNotice(cleanupData) {
+        const notice = document.createElement('div');
+        notice.className = 'fixed top-20 left-1/2 transform -translate-x-1/2 bg-blue-500 text-white rounded-lg shadow-lg p-4 z-50';
+        notice.innerHTML = `
+            <div class="flex items-center space-x-3">
+                <i class="fas fa-sync-alt fa-spin text-2xl"></i>
+                <div>
+                    <div class="font-bold">Demo Reset Complete</div>
+                    <div class="text-sm">Previous session ended. ${cleanupData.candidatesCleared} candidates cleared.</div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(notice);
+        
+        // Remove notice after 5 seconds
+        setTimeout(() => {
+            if (notice.parentNode) {
+                notice.parentNode.removeChild(notice);
             }
-            const queueLength = document.getElementById('queueLength');
-            if (queueLength) {
-                queueLength.textContent = '0';
-            }
-            const estimatedWait = document.getElementById('estimatedWait');
-            if (estimatedWait) {
-                estimatedWait.textContent = 'calculating...';
-            }
-        }
+        }, 5000);
     },
 
     refreshPage() {
         window.location.reload();
     }
-
-}; // FIXED: Properly close SessionManager object
-
+};
 // ========================================
 // DEBUG FUNCTIONS
 // ========================================
@@ -1511,6 +1981,148 @@ window.debugHR = {
         }
     }
 };
+
+// New function to freeze upload section
+function freezeUploadSection() {
+    console.log('Freezing upload section');
+    
+    // Disable file input
+    const fileInput = document.getElementById('resumeFiles');
+    if (fileInput) {
+        fileInput.disabled = true;
+    }
+    
+    // Update upload zone to show locked state
+    const uploadZone = document.querySelector('.bg-red-50.border-2.border-dashed.border-red-300');
+    if (uploadZone) {
+        uploadZone.classList.remove('hover:bg-red-100', 'transition-colors', 'cursor-pointer');
+        uploadZone.classList.add('bg-gray-100', 'border-gray-400', 'cursor-not-allowed');
+        uploadZone.style.pointerEvents = 'none';
+        
+        // Update upload zone content
+        uploadZone.innerHTML = `
+            <div class="mb-4">
+                <i class="fas fa-lock text-6xl text-gray-400"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-600 mb-2">Upload Section Locked</h3>
+            <div class="bg-gray-200 text-gray-700 font-bold py-2 px-6 rounded-lg">
+                <i class="fas fa-check-circle mr-2"></i>
+                Files Uploaded Successfully
+            </div>
+            <p class="text-sm text-gray-500 mt-3">
+                <i class="fas fa-info-circle mr-1"></i>
+                Upload is locked for this session. Proceed to job matching below.
+            </p>
+        `;
+    }
+    
+    // Disable download sample button
+    const downloadBtn = document.querySelector('button[onclick="downloadSampleResumes()"]');
+    if (downloadBtn) {
+        downloadBtn.disabled = true;
+        downloadBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        downloadBtn.innerHTML = '<i class="fas fa-lock mr-2"></i>Session Active';
+    }
+}
+
+// Function to maintain upload freeze state
+function maintainUploadFreeze() {
+    const uploadSection = document.querySelector('.bg-white.rounded-xl.shadow-lg.p-8.mb-8.card-hover');
+    if (uploadSection && uploadSection.querySelector('#step1')) {
+        uploadSection.classList.add('border-l-4', 'border-green-500');
+        uploadSection.style.background = 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)';
+        
+        // Add completion badge to step 1
+        const step1 = document.getElementById('step1');
+        if (step1) {
+            step1.innerHTML = '<i class="fas fa-check text-white"></i>';
+            step1.classList.add('bg-green-500');
+            step1.classList.remove('bg-purple-600');
+        }
+    }
+}
+
+// Function to scroll to job selection section
+function scrollToJobSelection() {
+    const jobSection = document.getElementById('step2');
+    if (jobSection) {
+        setTimeout(() => {
+            jobSection.closest('.bg-white.rounded-xl').scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'start' 
+            });
+        }, 1000);
+    }
+}
+
+// Function to reset upload state
+function resetUploadState() {
+    uploadSessionActive = false;
+    hasUploadedInCurrentSession = false;
+    
+    // Reset file input
+    const fileInput = document.getElementById('resumeFiles');
+    if (fileInput) {
+        fileInput.disabled = false;
+    }
+    
+    // Reset step indicators
+    const step1 = document.getElementById('step1');
+    if (step1) {
+        step1.innerHTML = '1';
+        step1.classList.remove('completed', 'bg-green-500');
+        step1.classList.add('bg-purple-600');
+    }
+    
+    // Reset upload section styling
+    const uploadSection = document.querySelector('.bg-white.rounded-xl.shadow-lg.p-8.mb-8');
+    if (uploadSection && uploadSection.querySelector('#step1')) {
+        uploadSection.classList.remove('border-l-4', 'border-green-500');
+        uploadSection.style.background = '';
+    }
+    
+    // Reset upload zone
+    const uploadZone = document.querySelector('.bg-gray-100.border-gray-400');
+    if (uploadZone) {
+        uploadZone.classList.remove('bg-gray-100', 'border-gray-400', 'cursor-not-allowed');
+        uploadZone.classList.add('bg-red-50', 'border-red-300', 'hover:bg-red-100', 'transition-colors', 'cursor-pointer');
+        uploadZone.style.pointerEvents = 'auto';
+        
+        // Restore original content
+        uploadZone.innerHTML = `
+            <div class="mb-4">
+                <i class="fas fa-file-pdf text-6xl text-red-400"></i>
+            </div>
+            <input type="file" id="resumeFiles" multiple accept=".pdf"
+                   class="hidden" onchange="handleFileSelect()">
+            <h3 class="text-lg font-semibold text-gray-800 mb-2">Click to Upload PDF Resumes</h3>
+            <button class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300">
+                <i class="fas fa-file-pdf mr-2"></i>
+                Browse PDF Files
+            </button>
+            <p class="text-sm text-gray-500 mt-3">
+                <i class="fas fa-info-circle mr-1"></i>
+                PDF files only (Max 10MB each) • Multiple files supported
+            </p>
+        `;
+    }
+    
+    // Reset download button
+    const downloadBtn = document.querySelector('button[onclick="downloadSampleResumes()"]');
+    if (downloadBtn) {
+        downloadBtn.disabled = false;
+        downloadBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        downloadBtn.innerHTML = '<i class="fas fa-download mr-2"></i>Download PDF Test Data';
+    }
+    
+    // Hide progress section
+    const progressSection = document.getElementById('uploadProgressSection');
+    if (progressSection) progressSection.classList.add('hidden');
+    
+    // Clear results
+    const resultsDiv = document.getElementById('uploadResults');
+    if (resultsDiv) resultsDiv.innerHTML = '';
+}
 
 console.log('HR Agent JavaScript loaded successfully');
 console.log('Debug functions available via window.debugHR');
