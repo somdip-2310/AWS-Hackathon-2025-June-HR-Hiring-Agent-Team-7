@@ -86,7 +86,19 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
-       
+       <!-- SendGrid Java SDK for email functionality -->
+		<dependency>
+    		<groupId>com.sendgrid</groupId>
+    		<artifactId>sendgrid-java</artifactId>
+    		<version>4.10.1</version>
+		</dependency>
+
+		<!-- Spring Boot Actuator for health checks -->
+		<dependency>
+    		<groupId>org.springframework.boot</groupId>
+    		<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+		
     </dependencies>
 
     <build>

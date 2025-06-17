@@ -31,6 +31,12 @@ EXPOSE 8081
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
   CMD curl -f http://localhost:8081/actuator/health || exit 1
 
+# SendGrid API Key (optional - can be overridden at runtime)
+ENV SENDGRID_API_KEY=""
+ENV SENDGRID_ENABLED=true
+ENV SENDGRID_FROM_EMAIL=hr-agent@somdip.dev
+ENV APPLICATION_URL=https://demos.somdip.dev/hr-agent
+  
 # Set JVM options for container environment with better memory management
 ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -Djava.security.egd=file:/dev/./urandom"
 

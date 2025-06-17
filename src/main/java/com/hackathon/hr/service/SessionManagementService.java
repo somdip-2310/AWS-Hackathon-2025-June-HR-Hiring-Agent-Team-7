@@ -1,5 +1,7 @@
 // src/main/java/com/hackathon/hr/service/SessionManagementService.java
 package com.hackathon.hr.service;
+import org.springframework.beans.factory.annotation.Autowired;
+import java.util.concurrent.CompletableFuture;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +24,14 @@ import java.util.stream.Collectors;
 @Service
 public class SessionManagementService {
     
+	@Autowired
+    public SessionManagementService(EmailService emailService) {
+        this.emailService = emailService;
+    }
+	
     private static final Logger logger = LoggerFactory.getLogger(SessionManagementService.class);
+    
+    private EmailService emailService;
     
     // Session duration in minutes
     @Value("${hr.demo.session.duration:7}")
@@ -151,6 +160,8 @@ public class SessionManagementService {
             
             logger.info("Demo session started for email: {} with session ID: {}", 
                        maskEmail(email), sessionId);
+         // Send welcome email (async, don't wait)
+            emailService.sendWelcomeEmail(email);
             
             // Notify next user in queue if any
             QueuedUser nextInQueue = waitingQueue.peek();
@@ -257,6 +268,16 @@ public class SessionManagementService {
                 logger.info("Current session expired for user: {}", 
                            maskEmail(currentActiveSession.getEmail()));
                 currentActiveSession = null;
+                
+             // Send session expired notification
+                try {
+                    if (expiredUserEmail != null) {
+                        emailService.sendSessionExpiredEmail(expiredUserEmail);
+                    }
+                } catch (Exception e) {
+                    logger.error("Failed to send session expired email", e);
+                }
+                
                 sessionExpired = true;
             }
             
@@ -303,22 +324,54 @@ public class SessionManagementService {
                 return new EmailVerificationResult(false, "Invalid email format");
             }
             
+            // Check if user is in queue
+            if (queuedUsers.values().stream().anyMatch(user -> user.getEmail().equalsIgnoreCase(email))) {
+                return new EmailVerificationResult(false, "You are already in the queue. Please wait for your turn.");
+            }
+            
+            // Check for active session
+            if (activeSessions.values().stream().anyMatch(session -> session.getEmail().equalsIgnoreCase(email))) {
+                return new EmailVerificationResult(false, "You already have an active session");
+            }
+            
+            // Check rate limiting
+            EmailVerification existingVerification = emailVerifications.get(email);
+            if (existingVerification != null) {
+                long minutesSinceLastRequest = ChronoUnit.MINUTES.between(existingVerification.getCreatedAt(), LocalDateTime.now());
+                if (minutesSinceLastRequest < 2) {
+                    return new EmailVerificationResult(false, "Please wait 2 minutes before requesting another code");
+                }
+            }
+            
             // Generate 6-digit verification code
             String verificationCode = String.format("%06d", (int)(Math.random() * 900000) + 100000);
             
-            // Store verification (in production, send actual email)
+            // Store verification
             EmailVerification verification = new EmailVerification(email, verificationCode, LocalDateTime.now());
             emailVerifications.put(email, verification);
             
-            // In a real implementation, send email here using AWS SES
-            // For demo purposes, we'll log it (you can see it in server logs)
-            logger.info("=== VERIFICATION CODE ===");
-            logger.info("Email: {}", maskEmail(email));
-            logger.info("Code: {}", verificationCode);
-            logger.info("========================");
+            // Send actual email via SendGrid (async)
+            CompletableFuture<Boolean> emailFuture = emailService.sendVerificationEmail(email, verificationCode);
+            
+            // Store email record for tracking
+            EmailRecord record = emailHistory.computeIfAbsent(email.toLowerCase().trim(), 
+                k -> new EmailRecord(email, null, LocalDateTime.now()));
+            record.incrementUsageCount();
+            
+            // Wait for email result with timeout
+            try {
+                boolean emailSent = emailFuture.get(10, java.util.concurrent.TimeUnit.SECONDS);
+                if (!emailSent) {
+                    emailVerifications.remove(email);
+                    return new EmailVerificationResult(false, "Failed to send verification email. Please try again.");
+                }
+            } catch (Exception e) {
+                logger.error("Error waiting for email send result", e);
+                // Continue anyway - email might still be sent
+            }
             
             return new EmailVerificationResult(true, 
-                "Verification code sent! For demo purposes, check the server logs or contact administrator.");
+                "Verification code sent to your email! Please check your inbox.");
                 
         } catch (Exception e) {
             logger.error("Error sending verification code to: {}", maskEmail(email), e);
