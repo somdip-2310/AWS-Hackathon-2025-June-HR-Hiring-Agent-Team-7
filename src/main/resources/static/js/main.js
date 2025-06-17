@@ -1475,47 +1475,115 @@ const SessionManager = {
         this.showStep('error');
     },
     
-    async requestVerificationCode() {
-        this.trackInteraction();
-        const email = document.getElementById('emailInput').value.trim();
-        if (!email) return;
-        
-        userEmail = email;
-        const btn = document.getElementById('requestCodeBtn');
-        const originalText = btn.innerHTML;
-        
-        try {
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Sending...';
-            btn.disabled = true;
-            
-            const response = await fetch('/api/session/request-verification', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `email=${encodeURIComponent(email)}`
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                document.getElementById('emailDisplay').textContent = email;
-                this.showStep('verification');
-            } else {
-                this.showError(data.message);
-            }
-        } catch (error) {
-            console.error('Error requesting verification:', error);
-            this.showError('Failed to send verification code');
-        } finally {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-        }
-    },
+	async requestVerificationCode() {
+	    this.trackInteraction();
+	    const emailInput = document.getElementById('emailInput');
+	    const email = emailInput.value.trim();
+	    
+	    if (!email) {
+	        alert('Please enter your email address');
+	        return;
+	    }
+	    
+	    // Email validation
+	    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+	    if (!emailRegex.test(email)) {
+	        alert('Please enter a valid email address');
+	        return;
+	    }
+	    
+	    // Normalize email to lowercase for consistency
+	    const normalizedEmail = email.toLowerCase().trim();
+	    userEmail = normalizedEmail;
+	    
+	    console.log('Requesting verification for email:', normalizedEmail);
+	    console.log('Original email input:', email);
+	    
+	    const btn = document.getElementById('requestCodeBtn');
+	    const originalText = btn.innerHTML;
+	    
+	    try {
+	        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Sending...';
+	        btn.disabled = true;
+	        
+	        const response = await fetch('/api/session/request-verification', {
+	            method: 'POST',
+	            headers: { 
+	                'Content-Type': 'application/x-www-form-urlencoded',
+	                'Accept': 'application/json'
+	            },
+	            body: `email=${encodeURIComponent(normalizedEmail)}`
+	        });
+	        
+	        const data = await response.json();
+	        console.log('Request verification response:', data);
+	        
+	        if (data.success) {
+	            // Display the normalized email
+	            document.getElementById('emailDisplay').textContent = normalizedEmail;
+	            this.showStep('verification');
+	            
+	            // Show expiration warning
+	            this.showCodeExpirationWarning();
+	            
+	            // Log success
+	            const timestamp = new Date().toLocaleTimeString();
+	            console.log(`Verification code requested successfully at ${timestamp} for ${normalizedEmail}`);
+	            
+	        } else {
+	            this.showError(data.message || 'Failed to send verification code');
+	        }
+	    } catch (error) {
+	        console.error('Error requesting verification:', error);
+	        this.showError('Failed to send verification code. Please check your connection and try again.');
+	    } finally {
+	        btn.innerHTML = originalText;
+	        btn.disabled = false;
+	    }
+	},
+
+	// Helper method to show expiration warning
+	showCodeExpirationWarning() {
+	    const verificationStep = document.getElementById('verificationStep');
+	    if (verificationStep) {
+	        const existingWarning = verificationStep.querySelector('.expiration-warning');
+	        if (!existingWarning) {
+	            const formContainer = verificationStep.querySelector('.p-8');
+	            if (formContainer) {
+	                const warningDiv = document.createElement('div');
+	                warningDiv.className = 'expiration-warning bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-4 fade-in';
+	                warningDiv.innerHTML = `
+	                    <p class="text-sm text-yellow-800">
+	                        <i class="fas fa-clock mr-1"></i>
+	                        This code will expire in 10 minutes. Please enter it promptly.
+	                    </p>
+	                `;
+	                formContainer.appendChild(warningDiv);
+	            }
+	        }
+	    }
+	},
     
 	async verifyCode() {
 	    this.trackInteraction();
-	    const code = document.getElementById('codeInput').value.trim();
-	    if (!code || !userEmail) {
+	    const codeInput = document.getElementById('codeInput');
+	    const code = codeInput.value.trim();
+	    
+	    if (!code) {
 	        alert('Please enter the verification code');
+	        codeInput.focus();
+	        return;
+	    }
+	    
+	    if (!userEmail) {
+	        alert('Email not found. Please go back and enter your email again.');
+	        this.showStep('email');
+	        return;
+	    }
+	    
+	    // Validate code format (6 digits)
+	    if (!/^\d{6}$/.test(code)) {
+	        alert('Please enter a valid 6-digit code');
 	        return;
 	    }
 	    
@@ -1526,19 +1594,29 @@ const SessionManager = {
 	        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Verifying...';
 	        btn.disabled = true;
 	        
-	        console.log('Verifying with email:', userEmail, 'and code:', code);
+	        // Ensure email is normalized (it should already be from requestVerificationCode)
+	        const normalizedEmail = userEmail.toLowerCase().trim();
 	        
-	        // Create form data using URLSearchParams for proper encoding
+	        console.log('=== VERIFICATION ATTEMPT ===');
+	        console.log('Email:', normalizedEmail);
+	        console.log('Code:', code);
+	        console.log('Timestamp:', new Date().toISOString());
+	        console.log('========================');
+	        
+	        // Create form data
 	        const formData = new URLSearchParams();
-	        formData.append('email', userEmail);
+	        formData.append('email', normalizedEmail);
 	        formData.append('code', code);
+	        
+	        console.log('Sending verification request with:', formData.toString());
 	        
 	        const response = await fetch('/api/session/verify-email', {
 	            method: 'POST',
 	            headers: { 
-	                'Content-Type': 'application/x-www-form-urlencoded' 
+	                'Content-Type': 'application/x-www-form-urlencoded',
+	                'Accept': 'application/json'
 	            },
-	            body: formData.toString()  // Convert URLSearchParams to string
+	            body: formData.toString()
 	        });
 	        
 	        const data = await response.json();
@@ -1547,68 +1625,97 @@ const SessionManager = {
 	        // Handle successful session start
 	        if (response.ok && data.success && data.sessionId) {
 	            currentSessionId = data.sessionId;
-	            console.log('Session started with ID:', currentSessionId);
-	            document.getElementById('sessionIdDisplay').textContent = data.sessionId.substring(0, 8) + '...';
-	            this.showStep('success');
-	            this.startSessionTimer(data.sessionDuration * 60);
-	            this.startCleanupMonitoring();
-	        } 
-	        // Handle 400 error - user was added to queue
-	        else if (response.status === 400 && data.message && 
-	                (data.message.includes('queue') || 
-	                 data.message.includes('position') || 
-	                 data.message.includes('Session unavailable'))) {
-	            console.log('User added to queue');
+	            console.log('Session started successfully with ID:', currentSessionId);
 	            
-	            // Show success message with refresh instruction
-	            const verificationStep = document.getElementById('verificationStep');
-	            if (verificationStep) {
-	                verificationStep.innerHTML = `
-	                    <div class="p-8">
-	                        <div class="text-center mb-6">
-	                            <div class="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
-	                                <i class="fas fa-check-circle text-orange-600 text-2xl"></i>
-	                            </div>
-	                            <h2 class="text-2xl font-bold text-gray-800 mb-2">Successfully Added to Queue!</h2>
-	                            <p class="text-gray-600 mb-4">You've been added to the waiting queue.</p>
-	                            <div class="bg-orange-50 rounded-lg p-4 mb-6 border border-orange-200">
-	                                <p class="text-orange-800 font-semibold mb-2">
-	                                    <i class="fas fa-sync-alt mr-2"></i>
-	                                    Please refresh the page to see your queue position
-	                                </p>
-	                                <p class="text-sm text-orange-700">
-	                                    Click the button below or press F5 to refresh
-	                                </p>
-	                            </div>
-	                        </div>
-	                        <button onclick="window.location.reload()" 
-	                                class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 flex items-center justify-center">
-	                            <i class="fas fa-sync-alt mr-2"></i>
-	                            Refresh Page
-	                        </button>
-	                    </div>
-	                `;
+	            // Update UI
+	            const sessionIdDisplay = document.getElementById('sessionIdDisplay');
+	            if (sessionIdDisplay) {
+	                sessionIdDisplay.textContent = data.sessionId.substring(0, 8) + '...';
+	            }
+	            
+	            this.showStep('success');
+	            this.startSessionTimer((data.sessionDuration || 7) * 60);
+	            this.startCleanupMonitoring();
+	            
+	            // Clear the code input for security
+	            codeInput.value = '';
+	        } 
+	        // Handle 400 error - check specific error messages
+	        else if (response.status === 400 && data.message) {
+	            if (data.message.includes('No verification code found')) {
+	                this.showError('Verification code not found. It may have expired. Please request a new code.');
+	                // Optionally go back to email step after delay
+	                setTimeout(() => {
+	                    this.showStep('email');
+	                }, 3000);
+	            } else if (data.message.includes('Invalid verification code')) {
+	                this.showError('Invalid code. Please check and try again.');
+	                // Clear the code input and focus
+	                codeInput.value = '';
+	                codeInput.focus();
+	            } else if (data.message.includes('expired')) {
+	                this.showError('Verification code has expired. Please request a new code.');
+	                setTimeout(() => {
+	                    this.showStep('email');
+	                }, 3000);
+	            } else if (data.message.includes('queue') || 
+	                      data.message.includes('position') || 
+	                      data.message.includes('Session unavailable')) {
+	                // User added to queue
+	                console.log('User added to queue');
+	                this.showQueueAddedSuccess();
+	            } else {
+	                // Other 400 errors
+	                this.showError(data.message);
 	            }
 	        }
-	        // Handle verification errors
-	        else if (!response.ok && data.message && 
-	                (data.message.includes('Invalid verification') || 
-	                 data.message.includes('expired') ||
-	                 data.message.includes('No verification code found'))) {
-	            this.showError(data.message);
-	        }
-	        // Handle other cases
+	        // Handle other errors
 	        else {
 	            this.showError(data.message || 'Verification failed. Please try again.');
 	        }
 	    } catch (error) {
 	        console.error('Error verifying code:', error);
-	        this.showError('Failed to verify code. Please try again.');
+	        this.showError('Failed to verify code. Please check your connection and try again.');
 	    } finally {
+	        // Restore button state after a short delay
 	        setTimeout(() => {
-	            btn.innerHTML = originalText;
-	            btn.disabled = false;
-	        }, 100);
+	            if (btn) {
+	                btn.innerHTML = originalText;
+	                btn.disabled = false;
+	            }
+	        }, 500);
+	    }
+	},
+
+	// Helper method to show queue success
+	showQueueAddedSuccess() {
+	    const verificationStep = document.getElementById('verificationStep');
+	    if (verificationStep) {
+	        verificationStep.innerHTML = `
+	            <div class="p-8">
+	                <div class="text-center mb-6">
+	                    <div class="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+	                        <i class="fas fa-check-circle text-orange-600 text-2xl"></i>
+	                    </div>
+	                    <h2 class="text-2xl font-bold text-gray-800 mb-2">Successfully Added to Queue!</h2>
+	                    <p class="text-gray-600 mb-4">You've been added to the waiting queue.</p>
+	                    <div class="bg-orange-50 rounded-lg p-4 mb-6 border border-orange-200">
+	                        <p class="text-orange-800 font-semibold mb-2">
+	                            <i class="fas fa-sync-alt mr-2"></i>
+	                            Please refresh the page to see your queue position
+	                        </p>
+	                        <p class="text-sm text-orange-700">
+	                            Click the button below or press F5 to refresh
+	                        </p>
+	                    </div>
+	                </div>
+	                <button onclick="window.location.reload()" 
+	                        class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 flex items-center justify-center">
+	                    <i class="fas fa-sync-alt mr-2"></i>
+	                    Refresh Page
+	                </button>
+	            </div>
+	        `;
 	    }
 	},
     // FIX 1: Force modal to close when Start Demo is clicked

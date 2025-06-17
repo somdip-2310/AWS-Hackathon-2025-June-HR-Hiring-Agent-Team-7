@@ -324,18 +324,21 @@ public class SessionManagementService {
                 return new EmailVerificationResult(false, "Invalid email format");
             }
             
+            // Normalize email to lowercase for consistent storage
+            String normalizedEmail = email.toLowerCase().trim();
+            
             // Check if user is in queue
-            if (queuedUsers.values().stream().anyMatch(user -> user.getEmail().equalsIgnoreCase(email))) {
+            if (queuedUsers.values().stream().anyMatch(user -> user.getEmail().equalsIgnoreCase(normalizedEmail))) {
                 return new EmailVerificationResult(false, "You are already in the queue. Please wait for your turn.");
             }
             
             // Check for active session
-            if (activeSessions.values().stream().anyMatch(session -> session.getEmail().equalsIgnoreCase(email))) {
+            if (activeSessions.values().stream().anyMatch(session -> session.getEmail().equalsIgnoreCase(normalizedEmail))) {
                 return new EmailVerificationResult(false, "You already have an active session");
             }
             
-            // Check rate limiting
-            EmailVerification existingVerification = emailVerifications.get(email);
+            // Check rate limiting (use normalized email)
+            EmailVerification existingVerification = emailVerifications.get(normalizedEmail);
             if (existingVerification != null) {
                 long minutesSinceLastRequest = ChronoUnit.MINUTES.between(existingVerification.getCreatedAt(), LocalDateTime.now());
                 if (minutesSinceLastRequest < 2) {
@@ -346,15 +349,18 @@ public class SessionManagementService {
             // Generate 6-digit verification code
             String verificationCode = String.format("%06d", (int)(Math.random() * 900000) + 100000);
             
-            // Store verification
+            // Store verification with normalized email as key, but keep original email in the object
             EmailVerification verification = new EmailVerification(email, verificationCode, LocalDateTime.now());
-            emailVerifications.put(email, verification);
+            emailVerifications.put(normalizedEmail, verification);
             
-            // Send actual email via SendGrid (async)
+            logger.info("Storing verification code for normalized email: {} (original: {})", 
+                       maskEmail(normalizedEmail), maskEmail(email));
+            
+            // Send actual email via SendGrid (async) - use original email for display
             CompletableFuture<Boolean> emailFuture = emailService.sendVerificationEmail(email, verificationCode);
             
             // Store email record for tracking
-            EmailRecord record = emailHistory.computeIfAbsent(email.toLowerCase().trim(), 
+            EmailRecord record = emailHistory.computeIfAbsent(normalizedEmail, 
                 k -> new EmailRecord(email, null, LocalDateTime.now()));
             record.incrementUsageCount();
             
@@ -362,7 +368,7 @@ public class SessionManagementService {
             try {
                 boolean emailSent = emailFuture.get(10, java.util.concurrent.TimeUnit.SECONDS);
                 if (!emailSent) {
-                    emailVerifications.remove(email);
+                    emailVerifications.remove(normalizedEmail);
                     return new EmailVerificationResult(false, "Failed to send verification email. Please try again.");
                 }
             } catch (Exception e) {
@@ -384,27 +390,50 @@ public class SessionManagementService {
      */
     public EmailVerificationResult verifyEmail(String email, String code) {
         try {
-            EmailVerification verification = emailVerifications.get(email);
+            // Normalize email to lowercase for lookup
+            String normalizedEmail = email.toLowerCase().trim();
+            
+            logger.info("Attempting to verify email: {} (normalized: {})", 
+                       maskEmail(email), maskEmail(normalizedEmail));
+            
+            EmailVerification verification = emailVerifications.get(normalizedEmail);
             
             if (verification == null) {
+                logger.warn("No verification code found for email: {} (normalized: {})", 
+                           maskEmail(email), maskEmail(normalizedEmail));
+                
+                // Debug: log all stored verification keys
+                logger.debug("Currently stored verification emails: {}", 
+                            emailVerifications.keySet().stream()
+                                .map(this::maskEmail)
+                                .collect(Collectors.joining(", ")));
+                
                 return new EmailVerificationResult(false, "No verification code found for this email");
             }
             
             // Check if code is expired (10 minutes)
-            if (ChronoUnit.MINUTES.between(verification.getCreatedAt(), LocalDateTime.now()) > 10) {
-                emailVerifications.remove(email);
+            long minutesSinceCreation = ChronoUnit.MINUTES.between(verification.getCreatedAt(), LocalDateTime.now());
+            if (minutesSinceCreation > 10) {
+                emailVerifications.remove(normalizedEmail);
+                logger.info("Verification code expired for email: {} (created {} minutes ago)", 
+                           maskEmail(email), minutesSinceCreation);
                 return new EmailVerificationResult(false, "Verification code expired. Please request a new one.");
             }
             
             // Verify code
-            if (!verification.getCode().equals(code.trim())) {
+            String trimmedCode = code.trim();
+            if (!verification.getCode().equals(trimmedCode)) {
+                logger.warn("Invalid verification code attempt for email: {} (expected: {}, received: {})", 
+                           maskEmail(email), verification.getCode(), trimmedCode);
                 return new EmailVerificationResult(false, "Invalid verification code");
             }
             
             // Mark as verified and remove from temporary storage
-            emailVerifications.remove(email);
+            emailVerifications.remove(normalizedEmail);
             
-            logger.info("Email verified successfully: {}", maskEmail(email));
+            logger.info("Email verified successfully: {} (normalized: {})", 
+                       maskEmail(email), maskEmail(normalizedEmail));
+            
             return new EmailVerificationResult(true, "Email verified successfully");
             
         } catch (Exception e) {
