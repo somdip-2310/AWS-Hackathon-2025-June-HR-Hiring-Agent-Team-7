@@ -251,9 +251,6 @@ public class SessionManagementService {
         return info;
     }
     
-    /**
-     * Force cleanup expired sessions and trigger data cleanup
-     */
     public SessionCleanupResult cleanupExpiredSessions() {
         boolean sessionExpired = false;
         String expiredUserEmail = null;
@@ -269,7 +266,7 @@ public class SessionManagementService {
                            maskEmail(currentActiveSession.getEmail()));
                 currentActiveSession = null;
                 
-             // Send session expired notification
+                // Send session expired notification
                 try {
                     if (expiredUserEmail != null) {
                         emailService.sendSessionExpiredEmail(expiredUserEmail);
@@ -279,11 +276,21 @@ public class SessionManagementService {
                 }
                 
                 sessionExpired = true;
+                
+                // IMPORTANT: Process queue when session expires
+                processNextInQueue();
             }
             
             // Cleanup old email verifications (older than 10 minutes)
             emailVerifications.entrySet().removeIf(entry -> 
                 ChronoUnit.MINUTES.between(entry.getValue().getCreatedAt(), LocalDateTime.now()) > 10);
+            
+            // Clean up stale queue entries (older than 30 minutes)
+            waitingQueue.removeIf(user -> 
+                ChronoUnit.MINUTES.between(user.getJoinedAt(), LocalDateTime.now()) > 30);
+            
+            // Update queued users map
+            queuedUsers.values().removeIf(user -> !waitingQueue.contains(user));
                 
         } catch (Exception e) {
             logger.error("Error during session cleanup", e);
@@ -293,7 +300,25 @@ public class SessionManagementService {
     }
     
     /**
-     * End session manually
+     * Process next user in queue
+     */
+    private void processNextInQueue() {
+        try {
+            QueuedUser nextUser = waitingQueue.peek();
+            if (nextUser != null) {
+                logger.info("Processing next user in queue: {}", maskEmail(nextUser.getEmail()));
+                
+                // Log for monitoring
+                logger.info("User {} is now first in queue and can start their session", 
+                           maskEmail(nextUser.getEmail()));
+            }
+        } catch (Exception e) {
+            logger.error("Error processing queue", e);
+        }
+    }
+    
+    /**
+     * Enhanced end session method
      */
     public boolean endSession(String sessionId) {
         try {
@@ -302,6 +327,9 @@ public class SessionManagementService {
                 if (currentActiveSession != null && 
                     currentActiveSession.getSessionId().equals(sessionId)) {
                     currentActiveSession = null;
+                    
+                    // Process queue when session ends manually
+                    processNextInQueue();
                 }
                 
                 logger.info("Session ended manually: {} for user: {}", 
@@ -318,6 +346,9 @@ public class SessionManagementService {
     /**
      * Send verification code to email (simulated - cost-effective approach)
      */
+    /**
+     * Updated sendVerificationCode to handle queue better
+     */
     public EmailVerificationResult sendVerificationCode(String email) {
         try {
             if (!isValidEmail(email)) {
@@ -328,15 +359,59 @@ public class SessionManagementService {
             String normalizedEmail = email.toLowerCase().trim();
             
             // Check if user is in queue
-            if (queuedUsers.values().stream().anyMatch(user -> user.getEmail().equalsIgnoreCase(normalizedEmail))) {
-                return new EmailVerificationResult(false, "You are already in the queue. Please wait for your turn.");
+            QueuedUser queuedUser = null;
+            for (QueuedUser user : waitingQueue) {
+                if (user.getEmail().equalsIgnoreCase(normalizedEmail)) {
+                    queuedUser = user;
+                    break;
+                }
             }
             
-            // Check for active session
+            if (queuedUser != null) {
+                // Check if they're first in queue and session is available
+                QueuedUser firstInQueue = waitingQueue.peek();
+                if (firstInQueue != null && firstInQueue.getQueueId().equals(queuedUser.getQueueId())) {
+                    // They're first in queue - check if session is available
+                    SessionStatus status = checkSessionAvailability();
+                    if (status.isAvailable()) {
+                        // Remove from queue and allow verification
+                        removeFromQueue(queuedUser.getQueueId());
+                        logger.info("User {} removed from queue to request verification", maskEmail(email));
+                    } else {
+                        // Still need to wait
+                        int position = getQueuePosition(queuedUser.getQueueId());
+                        return new EmailVerificationResult(false, 
+                            "You are #" + position + " in queue. Current session will end in " + 
+                            status.getRemainingMinutes() + " minutes.");
+                    }
+                } else {
+                    // Not first in queue
+                    int position = getQueuePosition(queuedUser.getQueueId());
+                    long estimatedWait = calculateEstimatedWaitTime();
+                    return new EmailVerificationResult(false, 
+                        "You are #" + position + " in queue. Estimated wait: " + estimatedWait + " minutes.");
+                }
+            }
+            
+            // Check for active session (not in queue)
             if (activeSessions.values().stream().anyMatch(session -> session.getEmail().equalsIgnoreCase(normalizedEmail))) {
                 return new EmailVerificationResult(false, "You already have an active session");
             }
             
+            // Check if session is available
+            SessionStatus sessionStatus = checkSessionAvailability();
+            if (!sessionStatus.isAvailable()) {
+                // Add to queue instead of just rejecting
+                String queueId = addToQueue(normalizedEmail);
+                int position = getQueuePosition(queueId);
+                long estimatedWait = calculateEstimatedWaitTime();
+                
+                return new EmailVerificationResult(false, 
+                    "Session unavailable. You've been added to queue at position #" + position + 
+                    ". Estimated wait: " + estimatedWait + " minutes. We'll notify you when it's your turn.");
+            }
+            
+            // Rest of the original code for sending verification...
             // Check rate limiting (use normalized email)
             EmailVerification existingVerification = emailVerifications.get(normalizedEmail);
             if (existingVerification != null) {
@@ -349,14 +424,14 @@ public class SessionManagementService {
             // Generate 6-digit verification code
             String verificationCode = String.format("%06d", (int)(Math.random() * 900000) + 100000);
             
-            // Store verification with normalized email as key, but keep original email in the object
+            // Store verification with normalized email as key
             EmailVerification verification = new EmailVerification(email, verificationCode, LocalDateTime.now());
             emailVerifications.put(normalizedEmail, verification);
             
             logger.info("Storing verification code for normalized email: {} (original: {})", 
                        maskEmail(normalizedEmail), maskEmail(email));
             
-            // Send actual email via SendGrid (async) - use original email for display
+            // Send actual email via SendGrid (async)
             CompletableFuture<Boolean> emailFuture = emailService.sendVerificationEmail(email, verificationCode);
             
             // Store email record for tracking
