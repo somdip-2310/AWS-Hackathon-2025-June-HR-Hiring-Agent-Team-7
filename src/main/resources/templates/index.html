@@ -65,6 +65,22 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link th:href="@{/css/main.css}" rel="stylesheet" type="text/css">
     
+	<!-- Google Analytics 4 -->
+	    <script th:if="${@environment.getProperty('google.analytics.enabled') == 'true'}" async th:src="@{https://www.googletagmanager.com/gtag/js(id=${@environment.getProperty('google.analytics.measurement.id')})}"></script>
+	    <script th:if="${@environment.getProperty('google.analytics.enabled') == 'true'}" th:inline="javascript">
+	        window.dataLayer = window.dataLayer || [];
+	        function gtag(){dataLayer.push(arguments);}
+	        gtag('js', new Date());
+	        
+	        gtag('config', /*[[${@environment.getProperty('google.analytics.measurement.id')}]]*/ 'G-TJMD3KM77H', {
+	            'page_title': 'HR Hiring Agent Demo',
+	            'page_location': window.location.href,
+	            'custom_map.dimension1': 'session_id',
+	            'custom_map.dimension2': 'queue_position',
+	            'custom_map.dimension3': 'upload_count'
+	        });
+	    </script>
+	
     <!-- Custom Styles -->
     <style>
         .nav-back-btn {

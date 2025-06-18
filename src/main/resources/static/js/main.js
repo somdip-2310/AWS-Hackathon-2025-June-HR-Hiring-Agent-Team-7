@@ -17,6 +17,69 @@ let uploadSessionActive = false;
 let hasUploadedInCurrentSession = false;
 
 // ========================================
+// GOOGLE ANALYTICS HELPERS
+// ========================================
+const GATracking = {
+    // Check if gtag is available
+    isEnabled: function() {
+        return typeof gtag !== 'undefined';
+    },
+    
+    // Track HR Demo specific events
+    trackEvent: function(eventName, parameters = {}) {
+        if (this.isEnabled()) {
+            gtag('event', eventName, {
+                'event_category': 'HR_Demo',
+                'event_label': window.location.pathname,
+                ...parameters
+            });
+        }
+    },
+    
+    // Track session events
+    trackSessionStart: function(sessionId) {
+        this.trackEvent('demo_session_start', {
+            'session_id': sessionId,
+            'session_type': 'authenticated'
+        });
+    },
+    
+    // Track upload events
+    trackResumeUpload: function(fileName, fileSize, success) {
+        this.trackEvent('resume_upload', {
+            'file_name': fileName,
+            'file_size_mb': (fileSize / 1048576).toFixed(2),
+            'upload_status': success ? 'success' : 'failed'
+        });
+    },
+    
+    // Track job matching
+    trackJobMatch: function(jobId, candidateCount, matchCount) {
+        this.trackEvent('job_match_performed', {
+            'job_id': jobId,
+            'candidates_analyzed': candidateCount,
+            'matches_found': matchCount,
+            'match_rate': candidateCount > 0 ? (matchCount / candidateCount * 100).toFixed(1) : 0
+        });
+    },
+    
+    // Track queue events
+    trackQueueJoin: function(position) {
+        this.trackEvent('queue_joined', {
+            'queue_position': position
+        });
+    },
+    
+    // Track session end
+    trackSessionEnd: function(duration) {
+        this.trackEvent('demo_session_end', {
+            'session_duration_seconds': duration,
+            'uploads_completed': hasUploadedInCurrentSession ? 'yes' : 'no'
+        });
+    }
+};
+
+// ========================================
 // INITIALIZATION
 // ========================================
 // Update the DOMContentLoaded event listener to check for token
@@ -352,6 +415,8 @@ async function uploadFiles(files) {
 
             const result = await response.json();
             console.log('Upload result for', file.name, ':', result);
+			// Track upload with GA
+			GATracking.trackResumeUpload(file.name, file.size, true);
 
             // Check for success
             if (result.success && (result.candidateId || result.id)) {
@@ -468,7 +533,11 @@ async function findMatches() {
     }
 
     console.log('Finding matches for job ID:', jobId);
-
+	// Track match attempt
+	GATracking.trackEvent('job_match_attempt', {
+	    'job_id': jobId,
+	    'candidate_count': currentCandidates.length
+	});
     // Show loading state
     const matchingLoader = document.getElementById('matchingLoader');
     const matchResults = document.getElementById('matchResults');
@@ -511,10 +580,13 @@ async function findMatches() {
         
         const result = await response.json();
         console.log('Match result:', result);
+		
         
         // Extract matches from result
         const matches = result.matches || [];
-        
+		// Track successful match
+		GATracking.trackJobMatch(jobId, currentCandidates.length, matches.length);
+		
         // Complete progress
         if (progressBar) progressBar.style.width = '100%';
         if (statusText) statusText.textContent = 'Matching complete!';
@@ -1217,6 +1289,8 @@ const SessionManager = {
 			        if (data.success && data.sessionId) {
 			            // Successfully claimed - start session
 			            currentSessionId = data.sessionId;
+						// Track session start
+						GATracking.trackSessionStart(data.sessionId);
 			            document.getElementById('sessionIdDisplay').textContent = data.sessionId.substring(0, 8) + '...';
 			            this.showStep('success');
 			            this.startSessionTimer(data.sessionDuration * 60);
@@ -1322,7 +1396,11 @@ const SessionManager = {
             console.log('User is active, postponing cleanup');
             return;
         }
-        
+		// Track session end
+		if (currentSessionId) {
+		    const sessionDuration = Date.now() - (window.sessionStartTime || Date.now());
+		    GATracking.trackSessionEnd(Math.floor(sessionDuration / 1000));
+		}
         // Reset current session
         this.cleanup();
         
@@ -1636,6 +1714,8 @@ const SessionManager = {
 	        // Handle successful session start
 	        if (response.ok && data.success && data.sessionId) {
 	            currentSessionId = data.sessionId;
+				// Track session start
+				GATracking.trackSessionStart(data.sessionId);
 	            console.log('Session started successfully with ID:', currentSessionId);
 	            
 	            // Update UI
@@ -1783,7 +1863,11 @@ const SessionManager = {
         } catch (error) {
             console.error('Error ending session:', error);
         }
-        
+		// Track session end
+		if (currentSessionId) {
+		    const sessionDuration = Date.now() - (window.sessionStartTime || Date.now());
+		    GATracking.trackSessionEnd(Math.floor(sessionDuration / 1000));
+		}
         this.cleanup();
         this.refreshPage();
     },
@@ -2125,7 +2209,9 @@ async function startSessionWithToken(token) {
         if (response.ok && data.success) {
             // Session started successfully
             currentSessionId = data.sessionId;
-            
+			// Track session start
+			GATracking.trackSessionStart(data.sessionId);
+
             // Store the email from the token (if provided)
             if (data.email) {
                 userEmail = data.email;
