@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.http.HttpStatus;
 
 @Controller
 public class HRController {
@@ -46,6 +47,9 @@ public class HRController {
     
     @Value("${hr.demo.ai.analysis.enabled:true}")
     private boolean aiAnalysisEnabled;
+    
+    @Value("${hr.demo.session.duration:7}")
+    private int sessionDurationMinutes;
     
     // Service startup time for uptime calculation
     private final LocalDateTime startupTime = LocalDateTime.now();
@@ -703,6 +707,70 @@ public class HRController {
     public ResponseEntity<Map<String, Object>> forfeitTurn(@RequestParam("email") String email) {
         // Same implementation as skip-turn
         return skipTurn(email);
+    }
+    
+    @PostMapping("/api/session/start-with-token")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> startSessionWithToken(@RequestParam String token) {
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            // Verify the access token
+            SessionManagementService.VerifyTokenResult verifyResult = sessionManagementService.verifyAccessToken(token);
+            
+            if (!verifyResult.isSuccess()) {
+                response.put("success", false);
+                response.put("message", verifyResult.getMessage());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            }
+            
+            String email = verifyResult.getEmail();
+            
+            // Check session availability
+            SessionManagementService.SessionStatus status = sessionManagementService.checkSessionAvailability();
+            
+            if (!status.isAvailable()) {
+                response.put("success", false);
+                response.put("message", "Session is currently occupied. Please try again later.");
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+            }
+            
+            // Start session directly without verification
+            SessionManagementService.SessionStartResult result = sessionManagementService.startSession(email);
+            
+            if (result.isSuccess()) {
+                response.put("success", true);
+                response.put("sessionId", result.getSessionId());
+                response.put("sessionDuration", sessionDurationMinutes);
+                response.put("message", "Session started successfully");
+                
+                logger.info("Session started via token for email: {}", sessionManagementService.maskEmail(email));
+                
+                return ResponseEntity.ok(response);
+            } else {
+                response.put("success", false);
+                response.put("message", result.getMessage());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            }
+            
+        } catch (Exception e) {
+            logger.error("Error starting session with token", e);
+            response.put("success", false);
+            response.put("message", "Failed to start session");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+    }
+
+    @GetMapping("/start-demo")
+    public String startDemoPage(@RequestParam(required = false) String token, Model model) {
+        // If token is provided, pass it to the page
+        if (token != null && !token.isEmpty()) {
+            model.addAttribute("accessToken", token);
+            logger.info("Demo access page requested with token");
+        }
+        
+        // You can reuse the main index page or create a simplified version
+        return "index"; // This will use the same index.html template
     }
 
     @GetMapping("/api/candidates/{candidateId}")

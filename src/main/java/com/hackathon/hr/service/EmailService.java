@@ -218,6 +218,69 @@ public class EmailService {
         });
     }
     
+    public CompletableFuture<Boolean> sendQueueTurnEmail(String toEmail, String accessLink, int expirationMinutes) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                // Check rate limiting
+                if (isRateLimited(toEmail)) {
+                    logger.warn("Rate limit exceeded for email: {}", maskEmail(toEmail));
+                    return false;
+                }
+                
+                // Log for monitoring
+                logger.info("=== QUEUE TURN NOTIFICATION ===");
+                logger.info("Email: {}", maskEmail(toEmail));
+                logger.info("Access Link: {}", accessLink);
+                logger.info("Expiration: {} minutes", expirationMinutes);
+                logger.info("===============================");
+                
+                // If SendGrid is not enabled, simulate
+                if (!sendgridEnabled || sendGrid == null) {
+                    logger.info("Queue turn email simulated for: {} (SendGrid disabled)", maskEmail(toEmail));
+                    stats.recordSuccess();
+                    updateRateLimit(toEmail);
+                    return true;
+                }
+                
+                // Create email context
+                Context context = new Context();
+                context.setVariable("userEmail", toEmail);
+                context.setVariable("accessLink", accessLink);
+                context.setVariable("expirationMinutes", expirationMinutes);
+                context.setVariable("timestamp", LocalDateTime.now());
+                context.setVariable("applicationUrl", applicationUrl);
+                
+                // Generate HTML content from template
+                String htmlContent = templateEngine.process("email/queue-turn", context);
+                
+                // Create email
+                Email from = new Email(fromEmail, fromName);
+                Email to = new Email(toEmail);
+                String subject = "HR Agent - It's Your Turn! Start Your Demo";
+                Content content = new Content("text/html", htmlContent);
+                
+                Mail mail = new Mail(from, subject, to, content);
+                
+                // Send email with retry logic
+                boolean sent = sendEmailWithRetry(mail);
+                
+                if (sent) {
+                    stats.recordSuccess();
+                    updateRateLimit(toEmail);
+                } else {
+                    stats.recordFailure();
+                }
+                
+                return sent;
+                
+            } catch (Exception e) {
+                logger.error("Failed to send queue turn email to: {}", maskEmail(toEmail), e);
+                stats.recordFailure();
+                return false;
+            }
+        });
+    }
+    
     private boolean sendEmailWithRetry(Mail mail) {
         if (!sendgridEnabled || sendGrid == null) {
             logger.info("SendGrid is disabled or not configured. Email would have been sent to: {}", 

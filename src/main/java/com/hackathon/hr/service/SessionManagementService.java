@@ -33,6 +33,8 @@ public class SessionManagementService {
     
     private EmailService emailService;
     
+    @Value("${application.url:https://demos.somdip.dev/hr-agent}")
+    private String applicationUrl;
     // Session duration in minutes
     @Value("${hr.demo.session.duration:7}")
     private int sessionDurationMinutes;
@@ -55,7 +57,8 @@ public class SessionManagementService {
     
     // EMAIL STORAGE - Cost-effective approach for tracking emails
     private final Map<String, EmailRecord> emailHistory = new ConcurrentHashMap<>();
-    
+ // Add access token storage
+    private final Map<String, AccessToken> accessTokens = new ConcurrentHashMap<>();
     /**
      * Check if a new session can be started
      */
@@ -291,6 +294,7 @@ public class SessionManagementService {
             
             // Update queued users map
             queuedUsers.values().removeIf(user -> !waitingQueue.contains(user));
+            accessTokens.entrySet().removeIf(entry -> entry.getValue().isExpired());
                 
         } catch (Exception e) {
             logger.error("Error during session cleanup", e);
@@ -308,13 +312,38 @@ public class SessionManagementService {
             if (nextUser != null) {
                 logger.info("Processing next user in queue: {}", maskEmail(nextUser.getEmail()));
                 
+                // Generate access token
+                String accessToken = generateAccessToken(nextUser.getEmail());
+                
+                // Generate access link
+                String accessLink = applicationUrl + "/start-demo?token=" + accessToken;
+                
+                // Send email notification with link
+                emailService.sendQueueTurnEmail(nextUser.getEmail(), accessLink, 2)
+                    .thenAccept(sent -> {
+                        if (sent) {
+                            logger.info("Queue turn notification sent to: {}", maskEmail(nextUser.getEmail()));
+                        } else {
+                            logger.error("Failed to send queue turn notification to: {}", maskEmail(nextUser.getEmail()));
+                        }
+                    });
+                
                 // Log for monitoring
-                logger.info("User {} is now first in queue and can start their session", 
+                logger.info("User {} is now first in queue and has been sent an access link", 
                            maskEmail(nextUser.getEmail()));
             }
         } catch (Exception e) {
             logger.error("Error processing queue", e);
         }
+    }
+    
+    private String generateAccessToken(String email) {
+        // Generate a secure token for the user
+        String token = UUID.randomUUID().toString() + "-" + System.currentTimeMillis();
+        // Store token with expiration (2 minutes as per requirement)
+        AccessToken accessToken = new AccessToken(email, token, LocalDateTime.now().plusMinutes(2));
+        accessTokens.put(token, accessToken);
+        return token;
     }
     
     /**
@@ -622,6 +651,44 @@ public class SessionManagementService {
         }
     }
     
+    public VerifyTokenResult verifyAccessToken(String token) {
+        try {
+            AccessToken accessToken = accessTokens.get(token);
+            
+            if (accessToken == null) {
+                return new VerifyTokenResult(false, "Invalid access token", null);
+            }
+            
+            if (accessToken.isExpired()) {
+                accessTokens.remove(token);
+                return new VerifyTokenResult(false, "Access token has expired", null);
+            }
+            
+            // Remove user from queue if they're still there
+            String email = accessToken.getEmail();
+            QueuedUser userInQueue = null;
+            for (QueuedUser user : waitingQueue) {
+                if (user.getEmail().equalsIgnoreCase(email)) {
+                    userInQueue = user;
+                    break;
+                }
+            }
+            
+            if (userInQueue != null) {
+                removeFromQueue(userInQueue.getQueueId());
+            }
+            
+            // Remove the token after use
+            accessTokens.remove(token);
+            
+            return new VerifyTokenResult(true, "Token verified successfully", email);
+            
+        } catch (Exception e) {
+            logger.error("Error verifying access token", e);
+            return new VerifyTokenResult(false, "Failed to verify token", null);
+        }
+    }
+    
     /**
      * Calculate estimated wait time based on queue position
      */
@@ -881,6 +948,42 @@ public class SessionManagementService {
         public String getEmail() { return email; }
         public LocalDateTime getJoinedAt() { return joinedAt; }
         public String getQueueId() { return queueId; }
+    }
+    
+    public static class AccessToken {
+        private final String email;
+        private final String token;
+        private final LocalDateTime expiresAt;
+        
+        public AccessToken(String email, String token, LocalDateTime expiresAt) {
+            this.email = email;
+            this.token = token;
+            this.expiresAt = expiresAt;
+        }
+        
+        public String getEmail() { return email; }
+        public String getToken() { return token; }
+        public LocalDateTime getExpiresAt() { return expiresAt; }
+        
+        public boolean isExpired() {
+            return LocalDateTime.now().isAfter(expiresAt);
+        }
+    }
+    
+    public static class VerifyTokenResult {
+        private final boolean success;
+        private final String message;
+        private final String email;
+        
+        public VerifyTokenResult(boolean success, String message, String email) {
+            this.success = success;
+            this.message = message;
+            this.email = email;
+        }
+        
+        public boolean isSuccess() { return success; }
+        public String getMessage() { return message; }
+        public String getEmail() { return email; }
     }
     
     // NEW: Email record for tracking

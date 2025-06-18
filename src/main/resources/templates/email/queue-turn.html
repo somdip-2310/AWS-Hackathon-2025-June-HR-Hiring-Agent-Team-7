@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Turn - HR Hiring Agent Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 40px 30px;
+        }
+        .notification-box {
+            background-color: #f0fdf4;
+            border: 2px solid #22c55e;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .notification-box h2 {
+            color: #16a34a;
+            margin: 0 0 10px 0;
+            font-size: 24px;
+        }
+        .notification-box p {
+            color: #15803d;
+            margin: 5px 0;
+        }
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+            color: white;
+            padding: 15px 40px;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 18px;
+            margin: 20px 0;
+            transition: transform 0.2s;
+        }
+        .cta-button:hover {
+            transform: translateY(-2px);
+        }
+        .timer-warning {
+            background-color: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .timer-warning h3 {
+            color: #d97706;
+            margin: 0 0 5px 0;
+            font-size: 16px;
+        }
+        .timer-warning p {
+            color: #92400e;
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        .features {
+            background-color: #f8fafc;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .features h3 {
+            color: #1e293b;
+            margin: 0 0 15px 0;
+            font-size: 18px;
+        }
+        .features ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        .features li {
+            color: #475569;
+            margin: 8px 0;
+        }
+        .footer {
+            background-color: #f8fafc;
+            padding: 20px 30px;
+            text-align: center;
+            font-size: 14px;
+            color: #64748b;
+            border-top: 1px solid #e2e8f0;
+        }
+        .footer a {
+            color: #7c3aed;
+            text-decoration: none;
+        }
+        @media (max-width: 600px) {
+            .container {
+                margin: 0;
+                border-radius: 0;
+            }
+            .content {
+                padding: 30px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎉 It's Your Turn!</h1>
+            <p>HR Hiring Agent Demo</p>
+        </div>
+        
+        <div class="content">
+            <div class="notification-box">
+                <h2>🚀 Your Demo Session is Ready!</h2>
+                <p>Hello <strong th:text="${userEmail}">user@example.com</strong>,</p>
+                <p>Great news! It's now your turn to experience the HR Hiring Agent demo.</p>
+            </div>
+            
+            <div style="text-align: center;">
+                <a th:href="${accessLink}" class="cta-button">Start Your Demo Now</a>
+            </div>
+            
+            <div class="timer-warning">
+                <h3>⏰ Important: Limited Time Access</h3>
+                <p>This link will expire in <strong th:text="${expirationMinutes}">2</strong> minutes.</p>
+                <p>Please click the button above immediately to start your session.</p>
+            </div>
+            
+            <div class="features">
+                <h3>What You Can Do in Your Demo:</h3>
+                <ul>
+                    <li>Upload and process up to 10 PDF resumes</li>
+                    <li>See AI-powered skill extraction in action</li>
+                    <li>Match candidates to job positions instantly</li>
+                    <li>Experience the full workflow for 7 minutes</li>
+                </ul>
+            </div>
+            
+            <div style="background-color: #e0e7ff; border-radius: 8px; padding: 15px; margin: 20px 0;">
+                <p style="margin: 0; color: #4338ca; font-size: 14px;">
+                    <strong>💡 Pro Tip:</strong> Have your PDF resumes ready before clicking the link, or use our sample resumes available in the demo.
+                </p>
+            </div>
+            
+            <p style="color: #64748b; font-size: 14px; text-align: center; margin-top: 30px;">
+                If you miss this opportunity, you'll need to rejoin the queue. Don't wait!
+            </p>
+        </div>
+        
+        <div class="footer">
+            <p>This is an automated notification from <a th:href="${applicationUrl}" th:text="${applicationUrl}">HR Hiring Agent</a></p>
+            <p>© 2025 Somdip Dey. All rights reserved.</p>
+            <p style="margin-top: 10px; font-size: 12px;">
+                If you didn't request this demo, please ignore this email.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

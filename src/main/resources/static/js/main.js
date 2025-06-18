@@ -19,8 +19,12 @@ let hasUploadedInCurrentSession = false;
 // ========================================
 // INITIALIZATION
 // ========================================
+// Update the DOMContentLoaded event listener to check for token
 document.addEventListener('DOMContentLoaded', function() {
     console.log('HR Agent initializing...');
+    
+    // Check for access token first
+    checkForAccessToken();
     
     // Initialize session management first
     SessionManager.init();
@@ -2079,6 +2083,221 @@ const SessionManager = {
         window.location.reload();
     }
 };
+
+// ========================================
+// TOKEN-BASED ACCESS FUNCTIONS
+// ========================================
+
+// Add this function to check for token in URL on page load
+function checkForAccessToken() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    
+    if (token) {
+        console.log('Access token found in URL, attempting to start session...');
+        startSessionWithToken(token);
+    }
+}
+
+// Function to start session using token
+async function startSessionWithToken(token) {
+    try {
+        // Show loading state
+        showTokenProcessingModal();
+        
+        const response = await fetch('/api/session/start-with-token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `token=${encodeURIComponent(token)}`
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            // Session started successfully
+            currentSessionId = data.sessionId;
+            
+            // Store the email from the token (if provided)
+            if (data.email) {
+                userEmail = data.email;
+            }
+            
+            // Hide processing modal
+            hideTokenProcessingModal();
+            
+            // Start the demo immediately
+            SessionManager.showStep('success');
+            SessionManager.startSessionTimer((data.sessionDuration || 7) * 60);
+            SessionManager.startCleanupMonitoring();
+            SessionManager.startDemo();
+            
+            // Remove token from URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            
+            // Show success notification
+            showNotification('Session started successfully! You have 7 minutes to complete the demo.', 'success');
+            
+        } else {
+            // Handle errors
+            hideTokenProcessingModal();
+            
+            if (response.status === 400 && data.message.includes('expired')) {
+                showTokenExpiredModal();
+            } else if (response.status === 409) {
+                showSessionOccupiedModal();
+            } else {
+                showTokenErrorModal(data.message || 'Failed to start session');
+            }
+            
+            // Remove invalid token from URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+        
+    } catch (error) {
+        console.error('Error starting session with token:', error);
+        hideTokenProcessingModal();
+        showTokenErrorModal('Failed to connect to server. Please try again.');
+    }
+}
+
+// Modal functions for token processing
+function showTokenProcessingModal() {
+    const modal = document.createElement('div');
+    modal.id = 'tokenProcessingModal';
+    modal.className = 'fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50';
+    modal.innerHTML = `
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-purple-100 mb-4">
+                    <i class="fas fa-spinner fa-spin text-purple-600 text-xl"></i>
+                </div>
+                <h3 class="text-lg leading-6 font-medium text-gray-900">Processing Your Access</h3>
+                <div class="mt-2 px-7 py-3">
+                    <p class="text-sm text-gray-500">
+                        We're setting up your demo session. This will just take a moment...
+                    </p>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function hideTokenProcessingModal() {
+    const modal = document.getElementById('tokenProcessingModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+function showTokenExpiredModal() {
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50';
+    modal.innerHTML = `
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                    <i class="fas fa-clock text-red-600 text-xl"></i>
+                </div>
+                <h3 class="text-lg leading-6 font-medium text-gray-900">Access Link Expired</h3>
+                <div class="mt-2 px-7 py-3">
+                    <p class="text-sm text-gray-500">
+                        Your access link has expired. Access links are only valid for 2 minutes after being sent.
+                    </p>
+                    <p class="text-sm text-gray-500 mt-2">
+                        Please request a new verification code to join the queue again.
+                    </p>
+                </div>
+                <div class="items-center px-4 py-3">
+                    <button onclick="this.closest('.fixed').remove(); SessionManager.showModal();"
+                            class="px-4 py-2 bg-purple-600 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500">
+                        Request New Access
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function showSessionOccupiedModal() {
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50';
+    modal.innerHTML = `
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-orange-100 mb-4">
+                    <i class="fas fa-users text-orange-600 text-xl"></i>
+                </div>
+                <h3 class="text-lg leading-6 font-medium text-gray-900">Session Currently Occupied</h3>
+                <div class="mt-2 px-7 py-3">
+                    <p class="text-sm text-gray-500">
+                        Another user is currently using the demo. This can happen if someone else claimed their turn just before you.
+                    </p>
+                    <p class="text-sm text-gray-500 mt-2">
+                        Please join the queue again to get a new turn.
+                    </p>
+                </div>
+                <div class="items-center px-4 py-3">
+                    <button onclick="this.closest('.fixed').remove(); SessionManager.showModal();"
+                            class="px-4 py-2 bg-orange-600 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                        Join Queue
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function showTokenErrorModal(message) {
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50';
+    modal.innerHTML = `
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                    <i class="fas fa-exclamation-triangle text-red-600 text-xl"></i>
+                </div>
+                <h3 class="text-lg leading-6 font-medium text-gray-900">Access Error</h3>
+                <div class="mt-2 px-7 py-3">
+                    <p class="text-sm text-gray-500">${message}</p>
+                </div>
+                <div class="items-center px-4 py-3">
+                    <button onclick="this.closest('.fixed').remove();"
+                            class="px-4 py-2 bg-gray-600 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+// Notification helper
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+    
+    notification.className = `fixed top-4 right-4 ${bgColor} text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-3`;
+    notification.innerHTML = `
+        <i class="fas ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'}"></i>
+        <span>${message}</span>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.style.transition = 'opacity 0.5s';
+        setTimeout(() => notification.remove(), 500);
+    }, 5000);
+}
+
 // ========================================
 // DEBUG FUNCTIONS
 // ========================================
