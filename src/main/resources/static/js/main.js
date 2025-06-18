@@ -1,5 +1,15 @@
 // UNIFIED main.js - Complete HR Agent JavaScript
-
+// ========================================
+// GTAG INITIALIZATION HELPER
+// ========================================
+// Wait for gtag to be available
+function waitForGtag(callback) {
+    if (typeof gtag !== 'undefined') {
+        callback();
+    } else {
+        setTimeout(() => waitForGtag(callback), 100);
+    }
+}
 // ========================================
 // GLOBAL VARIABLES
 // ========================================
@@ -27,13 +37,15 @@ const GATracking = {
     
     // Track HR Demo specific events
     trackEvent: function(eventName, parameters = {}) {
-        if (this.isEnabled()) {
+        // Wait for gtag before sending event
+        waitForGtag(() => {
             gtag('event', eventName, {
                 'event_category': 'HR_Demo',
                 'event_label': window.location.pathname,
                 ...parameters
             });
-        }
+            console.log('GA Event sent:', eventName, parameters);
+        });
     },
     
     // Track session events
@@ -2554,5 +2566,41 @@ function resetUploadState() {
     if (resultsDiv) resultsDiv.innerHTML = '';
 }
 
+// ========================================
+// GA INITIALIZATION ON WINDOW LOAD
+// ========================================
+window.addEventListener('load', function() {
+    // Store session start time
+    window.sessionStartTime = Date.now();
+    
+    // Now gtag should be available
+    if (typeof gtag !== 'undefined') {
+        console.log('Google Analytics is ready and loaded');
+        
+        // Track initial page view if needed
+        if (currentSessionId) {
+            GATracking.trackSessionStart(currentSessionId);
+        }
+    } else {
+        console.warn('Google Analytics (gtag) not found after page load');
+    }
+});
+
+// Expose GA tracking for debugging
+window.GADebug = {
+    checkGA: () => typeof gtag !== 'undefined',
+    testEvent: () => {
+        if (typeof gtag !== 'undefined') {
+            gtag('event', 'test_event_manual', {
+                'event_category': 'HR_Demo',
+                'test_value': 1
+            });
+            console.log('Test event sent');
+        } else {
+            console.error('gtag not available');
+        }
+    },
+    getTracking: () => GATracking
+};
 console.log('HR Agent JavaScript loaded successfully');
 console.log('Debug functions available via window.debugHR');
