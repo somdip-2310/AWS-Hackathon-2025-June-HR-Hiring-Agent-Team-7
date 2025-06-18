@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Background -->
+  <rect width="64" height="64" rx="12" fill="#1a1a2e"></rect>
+  
+  <!-- Gradient definition -->
+  <defs>
+    <linearGradient id="SvgjsLinearGradient1003" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f4c75;stop-opacity:1"></stop>
+      <stop offset="100%" style="stop-color:#3282b8;stop-opacity:1"></stop>
+    </linearGradient>
+    
+    <linearGradient id="SvgjsLinearGradient1002" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00d4ff;stop-opacity:1"></stop>
+      <stop offset="100%" style="stop-color:#0099e0;stop-opacity:1"></stop>
+    </linearGradient>
+  </defs>
+  
+  <!-- Code brackets -->
+  <g fill="url(#codeGradient)" font-family="'Courier New', monospace" font-weight="bold">
+    <text x="8" y="38" font-size="24" fill="url(#accentGradient)">&lt;</text>
+    <text x="44" y="38" font-size="24" fill="url(#accentGradient)">&gt;</text>
+  </g>
+  
+  <!-- Forward slash -->
+  <text x="26" y="38" font-size="28" fill="#ffffff" font-family="'Courier New', monospace" font-weight="300">/</text>
+  
+  <!-- Bottom accent line -->
+  <rect x="12" y="48" width="40" height="3" rx="1.5" fill="url(#accentGradient)" opacity="0.8"></rect>
+  
+  <!-- Tech dots pattern -->
+  <circle cx="8" cy="56" r="2" fill="#3282b8" opacity="0.6"></circle>
+  <circle cx="32" cy="56" r="2" fill="#3282b8" opacity="0.6"></circle>
+  <circle cx="56" cy="56" r="2" fill="#3282b8" opacity="0.6"></circle>
+</svg><style>@media (prefers-color-scheme: light) { :root { filter: none; } }
+@media (prefers-color-scheme: dark) { :root { filter: none; } }
+</style></svg>
