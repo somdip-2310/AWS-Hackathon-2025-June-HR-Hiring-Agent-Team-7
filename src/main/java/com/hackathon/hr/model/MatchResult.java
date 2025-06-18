@@ -5,7 +5,7 @@ public class MatchResult {
     private String candidateId;
     private String candidateName;
     private double score;
-    private String analysis;
+    private String justification;
 
     public MatchResult(String candidateId, String candidateName, double score) {
         this.candidateId = candidateId;
@@ -23,6 +23,13 @@ public class MatchResult {
     public double getScore() { return score; }
     public void setScore(double score) { this.score = score; }
 
-    public String getAnalysis() { return analysis; }
-    public void setAnalysis(String analysis) { this.analysis = analysis; }
+	public String getJustification() {
+		return justification;
+	}
+
+	public void setJustification(String justification) {
+		this.justification = justification;
+	}
+
+   
 }

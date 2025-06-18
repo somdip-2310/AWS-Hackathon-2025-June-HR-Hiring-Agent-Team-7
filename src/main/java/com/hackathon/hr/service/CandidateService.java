@@ -369,26 +369,48 @@ public class CandidateService {
     }
     
     private MatchResult calculateMatchWithAI(Candidate candidate, JobRequirement job) {
-        String prompt = String.format("""
-            Rate this candidate for the job on a scale of 0-100.
-            
-            Job Title: %s
-            Job Description: %s
-            Required Skills: %s
-            Required Experience: %s
-            
-            Candidate Skills: %s
-            Candidate Experience: %s
-            Candidate Education: %s
-            
-            Consider:
-            1. Technical skills match (40%% weight)
-            2. Experience level appropriateness (30%% weight)
-            3. Education relevance (20%% weight)
-            4. Overall fit (10%% weight)
-            
-            Return ONLY a numeric score between 0 and 100, no additional text or explanation.
-            """,
+    	String prompt = String.format("""
+    		    Rate this candidate for the job on a scale of 0-100 and provide a specific justification.
+    		    
+    		    Job Title: %s
+    		    Job Description: %s
+    		    Required Skills: %s
+    		    Required Experience: %s
+    		    
+    		    Candidate Skills: %s
+    		    Candidate Experience: %s
+    		    Candidate Education: %s
+    		    
+    		    Consider:
+    		    1. Technical skills match (40%% weight)
+    		    2. Experience level appropriateness (30%% weight)
+    		    3. Education relevance (20%% weight)
+    		    4. Overall fit (10%% weight)
+    		    
+    		    Return ONLY a JSON object with this exact structure:
+    		    {
+    		        "score": <number between 0 and 100>,
+    		        "justification": "<one specific sentence explaining the match>"
+    		    }
+    		    
+    		    The justification MUST be specific and mention:
+    		    - Exact skills that match or are missing (e.g., "Has React, Node.js, MongoDB but lacks AWS and Docker")
+    		    - Experience level alignment (e.g., "5 years experience matches senior requirement")
+    		    - Any notable strengths or gaps
+    		    
+    		    Good justification examples:
+    		    - "Has 7/10 required skills including Java, Spring Boot, and PostgreSQL but missing Kubernetes and Kafka experience."
+    		    - "Strong Angular and TypeScript expertise matches requirements, but entry-level experience insufficient for senior role."
+    		    - "Matches all technical requirements (Python, TensorFlow, SQL) with 4 years ML experience fitting mid-level position."
+    		    - "Has React and JavaScript but lacks required backend skills (Node.js, MongoDB) and has only 2 years experience for senior role."
+    		    
+    		    Bad justification examples (DO NOT USE):
+    		    - "Good match with relevant skills"
+    		    - "Candidate has some required skills"
+    		    - "Experience level is appropriate"
+    		    
+    		    Be specific about which skills match and which are missing by name.
+    		    """,
                 job.getTitle(),
                 job.getDescription(),
                 String.join(", ", job.getRequiredSkills()),
@@ -401,18 +423,24 @@ public class CandidateService {
         try {
             String response = bedrockService.invokeModel(prompt);
             
-            // Extract numeric value from response
-            String numericStr = response.trim().replaceAll("[^0-9.]", "");
-            double score = Double.parseDouble(numericStr);
+            // Extract JSON from response
+            String cleanedResponse = extractJsonFromResponse(response);
+            Map<String, Object> resultData = objectMapper.readValue(cleanedResponse,
+                    new TypeReference<Map<String, Object>>() {});
+            
+            // Extract score and justification
+            double score = Double.parseDouble(resultData.get("score").toString());
+            String justification = resultData.get("justification").toString();
             
             // Ensure score is within valid range
             score = Math.max(0, Math.min(100, score));
 
             MatchResult result = new MatchResult(candidate.getId(),
                     candidate.getFileName(), score);
+            result.setJustification(justification);
 
-            logger.debug("AI calculated match score {} for candidate {} and job {}", 
-                    score, candidate.getFileName(), job.getTitle());
+            logger.debug("AI calculated match score {} with justification: {} for candidate {} and job {}", 
+                    score, justification, candidate.getFileName(), job.getTitle());
 
             return result;
 
@@ -424,13 +452,20 @@ public class CandidateService {
     
     private MatchResult calculateMatchHeuristic(Candidate candidate, JobRequirement job) {
         double score = 0.0;
+        List<String> matchedSkills = new ArrayList<>();
+        List<String> missingSkills = new ArrayList<>();
+        String experienceNote = "";
         
         // Experience level match (30 points)
         if (candidate.getExperienceLevel() != null && job.getExperienceLevel() != null) {
             if (candidate.getExperienceLevel().equals(job.getExperienceLevel())) {
                 score += 30;
+                experienceNote = candidate.getExperienceLevel() + " experience matches requirement";
             } else if (isExperienceLevelCompatible(candidate.getExperienceLevel(), job.getExperienceLevel())) {
                 score += 15;
+                experienceNote = candidate.getExperienceLevel() + " experience partially fits " + job.getExperienceLevel() + " requirement";
+            } else {
+                experienceNote = candidate.getExperienceLevel() + " experience insufficient for " + job.getExperienceLevel() + " role";
             }
         }
         
@@ -439,22 +474,23 @@ public class CandidateService {
             Set<String> candidateSkills = candidate.getTechnicalSkills().stream()
                 .map(String::toLowerCase)
                 .collect(Collectors.toSet());
-            Set<String> requiredSkills = job.getRequiredSkills().stream()
-                .map(String::toLowerCase)
-                .collect(Collectors.toSet());
             
-            long matchedSkills = requiredSkills.stream()
-                .filter(candidateSkills::contains)
-                .count();
-                
-            double skillMatchPercentage = requiredSkills.isEmpty() ? 0 : 
-                (double) matchedSkills / requiredSkills.size();
+            for (String requiredSkill : job.getRequiredSkills()) {
+                if (candidateSkills.contains(requiredSkill.toLowerCase())) {
+                    matchedSkills.add(requiredSkill);
+                } else {
+                    missingSkills.add(requiredSkill);
+                }
+            }
+            
+            double skillMatchPercentage = job.getRequiredSkills().isEmpty() ? 0 : 
+                (double) matchedSkills.size() / job.getRequiredSkills().size();
             score += skillMatchPercentage * 40;
         }
         
         // Education match (20 points)
         if (candidate.getEducation() != null) {
-            score += 20; // Simplified for hackathon
+            score += 20;
         }
         
         // Soft skills bonus (10 points)
@@ -467,6 +503,40 @@ public class CandidateService {
         
         MatchResult result = new MatchResult(candidate.getId(),
                 candidate.getFileName(), score);
+        
+        // Build specific justification
+        StringBuilder justification = new StringBuilder();
+        
+        if (!matchedSkills.isEmpty()) {
+            justification.append("Has ");
+            if (matchedSkills.size() <= 3) {
+                justification.append(String.join(", ", matchedSkills));
+            } else {
+                justification.append(matchedSkills.size()).append("/").append(job.getRequiredSkills().size())
+                            .append(" skills including ").append(String.join(", ", matchedSkills.subList(0, 3))).append(" and others");
+            }
+        }
+        
+        if (!missingSkills.isEmpty()) {
+            if (justification.length() > 0) justification.append(" but lacks ");
+            else justification.append("Missing ");
+            
+            if (missingSkills.size() <= 3) {
+                justification.append(String.join(", ", missingSkills));
+            } else {
+                justification.append(String.join(", ", missingSkills.subList(0, 3))).append(" and ")
+                            .append(missingSkills.size() - 3).append(" other skills");
+            }
+        }
+        
+        if (experienceNote.length() > 0) {
+            if (justification.length() > 0) justification.append(", ");
+            justification.append(experienceNote);
+        }
+        
+        justification.append(".");
+        
+        result.setJustification(justification.toString());
         
         logger.debug("Heuristic calculated match score {} for candidate {} and job {}", 
                 score, candidate.getFileName(), job.getTitle());

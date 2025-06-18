@@ -583,11 +583,18 @@ function displayMatches(matches) {
                         <div class="w-12 h-12 bg-white rounded-full flex items-center justify-center mr-4 shadow">
                             <i class="fas ${rankIcon} text-xl"></i>
                         </div>
-                        <div>
+                        <div class="flex-1">
                             <h3 class="text-xl font-semibold text-gray-800">
                                 ${match.candidateName || 'Unknown Candidate'}
                             </h3>
                             <p class="text-gray-600 text-sm">Rank #${index + 1}</p>
+                            ${match.justification ? `
+                                <p class="text-sm text-gray-700 mt-2 italic">
+                                    <i class="fas fa-quote-left text-gray-400 mr-1 text-xs"></i>
+                                    ${match.justification}
+                                    <i class="fas fa-quote-right text-gray-400 ml-1 text-xs"></i>
+                                </p>
+                            ` : ''}
                         </div>
                     </div>
                     <div class="text-center ml-6">
