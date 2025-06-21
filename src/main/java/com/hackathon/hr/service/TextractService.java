@@ -9,15 +9,10 @@ import org.springframework.stereotype.Service;
 import com.hackathon.hr.exception.DocumentProcessingException;
 import com.hackathon.hr.exception.UnsupportedDocumentFormatException;
 
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.textract.TextractClient;
 import software.amazon.awssdk.services.textract.model.*;
 import java.util.stream.Collectors;
 import javax.annotation.PostConstruct;
-import software.amazon.awssdk.services.textract.model.TextractException;
-import software.amazon.awssdk.services.textract.model.UnsupportedDocumentException;
 
 @Service
 public class TextractService {
@@ -25,17 +20,14 @@ public class TextractService {
     private static final Logger logger = LoggerFactory.getLogger(TextractService.class);
     
     private final TextractClient textractClient;
-    private final S3Client s3Client;
-
-    public TextractService(TextractClient textractClient, S3Client s3Client) {
-        this.textractClient = textractClient;
-        this.s3Client = s3Client;
-    }
-    
     
     // Read from environment variable first, then fall back to property
     @Value("${S3_BUCKET_NAME:${aws.s3.bucket-name:hr-hiring-resumes-js}}")
     private String bucketName;
+    
+    public TextractService(TextractClient textractClient) {
+        this.textractClient = textractClient;
+    }
     
     @PostConstruct
     public void init() {
@@ -49,134 +41,29 @@ public class TextractService {
         try {
             logger.info("Extracting text from s3://{}/{}", bucketName, s3Key);
             
-            // First, check the file size to determine sync vs async processing
-            HeadObjectRequest headRequest = HeadObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(s3Key)
+            // Use synchronous processing only (no async to avoid permission issues)
+            DetectDocumentTextRequest request = DetectDocumentTextRequest.builder()
+                    .document(Document.builder()
+                            .s3Object(S3Object.builder()
+                                    .bucket(bucketName)
+                                    .name(s3Key)
+                                    .build())
+                            .build())
                     .build();
+                    
+            DetectDocumentTextResponse response = textractClient.detectDocumentText(request);
             
-            HeadObjectResponse headResponse = s3Client.headObject(headRequest);
-            long fileSize = headResponse.contentLength();
+            String extractedText = response.blocks().stream()
+                    .filter(block -> block.blockType() == BlockType.LINE)
+                    .map(Block::text)
+                    .collect(Collectors.joining("\n"));
+                    
+            logger.info("Text extracted successfully from: {} (extracted {} lines)", 
+                s3Key, 
+                response.blocks().stream().filter(block -> block.blockType() == BlockType.LINE).count());
+                
+            return extractedText;
             
-            logger.info("File size for {}: {} bytes", s3Key, fileSize);
-            
-            // Use synchronous processing for files under 1MB, async for larger files
-            if (fileSize < 1024 * 1024) { // 1MB threshold
-                // Original synchronous processing
-                DetectDocumentTextRequest request = DetectDocumentTextRequest.builder()
-                        .document(Document.builder()
-                                .s3Object(S3Object.builder()
-                                        .bucket(bucketName)
-                                        .name(s3Key)
-                                        .build())
-                                .build())
-                        .build();
-                        
-                DetectDocumentTextResponse response = textractClient.detectDocumentText(request);
-                
-                String extractedText = response.blocks().stream()
-                        .filter(block -> block.blockType() == BlockType.LINE)
-                        .map(Block::text)
-                        .collect(Collectors.joining("\n"));
-                        
-                logger.info("Text extracted successfully from: {} (extracted {} lines)", 
-                    s3Key, 
-                    response.blocks().stream().filter(block -> block.blockType() == BlockType.LINE).count());
-                    
-                return extractedText;
-                
-            } else {
-                // Asynchronous processing for larger files
-                logger.info("Using asynchronous text detection for large file: {}", s3Key);
-                
-                StartDocumentTextDetectionRequest startRequest = StartDocumentTextDetectionRequest.builder()
-                        .documentLocation(DocumentLocation.builder()
-                                .s3Object(S3Object.builder()
-                                        .bucket(bucketName)
-                                        .name(s3Key)
-                                        .build())
-                                .build())
-                        .build();
-                
-                StartDocumentTextDetectionResponse startResponse = textractClient.startDocumentTextDetection(startRequest);
-                String jobId = startResponse.jobId();
-                
-                logger.info("Started Textract job: {} for document: {}", jobId, s3Key);
-                
-                // Poll for completion
-                GetDocumentTextDetectionRequest getRequest = GetDocumentTextDetectionRequest.builder()
-                        .jobId(jobId)
-                        .build();
-                
-                GetDocumentTextDetectionResponse response;
-                int attempts = 0;
-                int maxAttempts = 60; // Max 60 seconds wait
-                
-                do {
-                    Thread.sleep(1000); // Wait 1 second between polls
-                    response = textractClient.getDocumentTextDetection(getRequest);
-                    attempts++;
-                    
-                    if (attempts >= maxAttempts) {
-                        throw new RuntimeException("Textract job timed out after " + maxAttempts + " seconds");
-                    }
-                    
-                    logger.debug("Textract job {} status: {}", jobId, response.jobStatus());
-                    
-                } while (response.jobStatus() == JobStatus.IN_PROGRESS);
-                
-                if (response.jobStatus() == JobStatus.SUCCEEDED) {
-                    StringBuilder extractedText = new StringBuilder();
-                    String nextToken = null;
-                    int totalLines = 0;
-                    
-                    // Handle pagination for large documents
-                    do {
-                        GetDocumentTextDetectionRequest paginatedRequest = GetDocumentTextDetectionRequest.builder()
-                                .jobId(jobId)
-                                .nextToken(nextToken)
-                                .build();
-                        
-                        GetDocumentTextDetectionResponse paginatedResponse = textractClient.getDocumentTextDetection(paginatedRequest);
-                        
-                        String pageText = paginatedResponse.blocks().stream()
-                                .filter(block -> block.blockType() == BlockType.LINE)
-                                .map(Block::text)
-                                .collect(Collectors.joining("\n"));
-                        
-                        if (!pageText.isEmpty()) {
-                            if (extractedText.length() > 0) {
-                                extractedText.append("\n");
-                            }
-                            extractedText.append(pageText);
-                        }
-                        
-                        totalLines += paginatedResponse.blocks().stream()
-                                .filter(block -> block.blockType() == BlockType.LINE)
-                                .count();
-                        
-                        nextToken = paginatedResponse.nextToken();
-                        
-                    } while (nextToken != null);
-                    
-                    logger.info("Text extracted successfully from: {} (extracted {} lines using async processing)", 
-                        s3Key, totalLines);
-                    
-                    return extractedText.toString();
-                    
-                } else {
-                    String errorMessage = "Textract job failed with status: " + response.jobStatus();
-                    if (response.statusMessage() != null) {
-                        errorMessage += " - " + response.statusMessage();
-                    }
-                    throw new RuntimeException(errorMessage);
-                }
-            }
-            
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.error("Interrupted while waiting for Textract job to complete", e);
-            throw new RuntimeException("Textract processing was interrupted", e);
         } catch (UnsupportedDocumentException e) {
             logger.error("Unsupported document format for s3://{}/{}", bucketName, s3Key, e);
             
@@ -195,17 +82,31 @@ public class TextractService {
             
             throw new UnsupportedDocumentFormatException(userFriendlyError, e);
             
+        } catch (AccessDeniedException e) {
+            logger.error("Access denied for Textract operation on s3://{}/{}", bucketName, s3Key, e);
+            throw new DocumentProcessingException("PROCESSING_ERROR: Access denied - please contact system administrator. The application doesn't have required AWS permissions.", e);
+            
+        } catch (InvalidS3ObjectException e) {
+            logger.error("Invalid S3 object for s3://{}/{}", bucketName, s3Key, e);
+            
+            String fileName = s3Key.substring(s3Key.lastIndexOf('/') + 1);
+            throw new DocumentProcessingException(String.format(
+                "PROCESSING_ERROR: Unable to access '%s' from S3. Please ensure the file was uploaded correctly and try again.",
+                fileName
+            ), e);
+            
         } catch (TextractException e) {
             logger.error("Textract service error for s3://{}/{}", bucketName, s3Key, e);
             
             String fileName = s3Key.substring(s3Key.lastIndexOf('/') + 1);
-            String errorCode = e.awsErrorDetails().errorCode();
+            String errorCode = e.awsErrorDetails() != null ? e.awsErrorDetails().errorCode() : "Unknown";
             
             // Provide specific guidance based on error type
             String suggestion = getSuggestionForTextractError(errorCode, fileName);
             throw new DocumentProcessingException(suggestion, e);
             
         } catch (Exception e) {
+            // For any other unexpected errors, log and re-throw without wrapping
             logger.error("Unexpected error extracting text from document s3://{}/{}", bucketName, s3Key, e);
             throw new RuntimeException("Failed to extract text from document: " + s3Key + 
                 ". Please ensure the file is a valid PDF and try again.", e);
@@ -216,7 +117,7 @@ public class TextractService {
         switch (errorCode) {
             case "InvalidParameterException":
                 return String.format(
-                    "The PDF '%s' contains invalid parameters. Please:\n" +
+                    "PROCESSING_ERROR: The PDF '%s' contains invalid parameters. Please:\n" +
                     "• Ensure the file size is under 5MB\n" +
                     "• Check that the PDF is not corrupted\n" +
                     "• Try opening and re-saving the PDF", 
@@ -225,7 +126,7 @@ public class TextractService {
                 
             case "DocumentTooLargeException":
                 return String.format(
-                    "The PDF '%s' is too large for processing. Please:\n" +
+                    "PROCESSING_ERROR: The PDF '%s' is too large for processing. Please:\n" +
                     "• Reduce file size to under 5MB\n" +
                     "• Compress the PDF using online tools\n" +
                     "• Remove unnecessary images or pages", 
@@ -234,16 +135,35 @@ public class TextractService {
                 
             case "BadDocumentException":
                 return String.format(
-                    "The PDF '%s' appears to be corrupted. Please:\n" +
+                    "PROCESSING_ERROR: The PDF '%s' appears to be corrupted. Please:\n" +
                     "• Try opening the file to verify it's not corrupted\n" +
                     "• Re-create or re-download the PDF\n" +
                     "• Use a PDF repair tool if needed", 
                     fileName
                 );
                 
+            case "ProvisionedThroughputExceededException":
+                return String.format(
+                    "PROCESSING_ERROR: Service is currently busy processing '%s'. Please:\n" +
+                    "• Wait a few moments and try again\n" +
+                    "• Upload files one at a time if uploading multiple files", 
+                    fileName
+                );
+                
+            case "ThrottlingException":
+                return String.format(
+                    "PROCESSING_ERROR: Too many requests for '%s'. Please:\n" +
+                    "• Wait a few seconds and try again\n" +
+                    "• Reduce the number of simultaneous uploads", 
+                    fileName
+                );
+                
+            case "AccessDeniedException":
+                return "PROCESSING_ERROR: System configuration error. Please contact the administrator.";
+                
             default:
                 return String.format(
-                    "Unable to process '%s'. Please:\n" +
+                    "PROCESSING_ERROR: Unable to process '%s'. Please:\n" +
                     "• Ensure it's a standard PDF file\n" +
                     "• Check that it's not password-protected\n" +
                     "• Try converting to PDF using a different tool\n" +
@@ -253,5 +173,4 @@ public class TextractService {
                 );
         }
     }
-    
 }
