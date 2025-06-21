@@ -1135,31 +1135,41 @@ const SessionManager = {
         }, 30000);
     },
     
-    startCleanupMonitoring() {
-        // Clear any existing interval
-        if (cleanupCheckInterval) {
-            clearInterval(cleanupCheckInterval);
-        }
-        
-        // Only monitor cleanup when there's an active session
-        cleanupCheckInterval = setInterval(async () => {
-            // Skip if user is interacting
-            if (this.modalState.isUserInteracting) {
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/session/cleanup-check');
-                const data = await response.json();
-                
-                if (data.sessionExpired && data.dataCleanupRequired) {
-                    this.handleDataCleanup(data);
-                }
-            } catch (error) {
-                console.log('Cleanup check failed:', error);
-            }
-        }, 15000);
-    },
+	startCleanupMonitoring() {
+	    // Clear any existing interval
+	    if (cleanupCheckInterval) {
+	        clearInterval(cleanupCheckInterval);
+	    }
+	    
+	    // Only monitor cleanup when there's an active session
+	    if (!currentSessionId) {
+	        return;
+	    }
+	    
+	    cleanupCheckInterval = setInterval(async () => {
+	        // Skip if user is interacting
+	        if (this.modalState.isUserInteracting) {
+	            return;
+	        }
+	        
+	        try {
+	            const response = await fetch('/api/session/cleanup-check');
+	            const data = await response.json();
+	            
+	            if (data.sessionExpired && data.dataCleanupRequired) {
+	                // Show session expired notice
+	                this.showSessionExpiredNotice();
+	                
+	                // Handle cleanup after showing notice
+	                setTimeout(() => {
+	                    this.handleDataCleanup(data);
+	                }, 3000); // Give user time to see the message
+	            }
+	        } catch (error) {
+	            console.log('Cleanup check failed:', error);
+	        }
+	    }, 15000); // Check every 15 seconds
+	},
 
     // FIX 2: Modified joinQueue to show email verification page
     joinQueue() {
@@ -1981,27 +1991,46 @@ const SessionManager = {
         }, 300);
     },
     
-    async endSession() {
-        this.trackInteraction();
-        if (!currentSessionId) return;
-        
-        try {
-            await fetch('/api/session/end', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `sessionId=${encodeURIComponent(currentSessionId)}`
-            });
-        } catch (error) {
-            console.error('Error ending session:', error);
-        }
-		// Track session end
-		if (currentSessionId) {
-		    const sessionDuration = Date.now() - (window.sessionStartTime || Date.now());
-		    GATracking.trackSessionEnd(Math.floor(sessionDuration / 1000));
-		}
-        this.cleanup();
-        this.refreshPage();
-    },
+	async endSession() {
+	    if (!currentSessionId) return;
+	    
+	    if (confirm('Are you sure you want to end your session? All uploaded data will be cleared.')) {
+	        try {
+	            const response = await fetch('/api/session/end', {
+	                method: 'POST',
+	                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+	                body: `sessionId=${currentSessionId}`
+	            });
+	            
+	            if (response.ok) {
+	                // Show session ended notice
+	                const notice = document.createElement('div');
+	                notice.className = 'fixed top-20 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white rounded-lg shadow-lg p-4 z-50';
+	                notice.innerHTML = `
+	                    <div class="flex items-center space-x-3">
+	                        <i class="fas fa-check-circle text-2xl"></i>
+	                        <div>
+	                            <div class="font-bold">Session Ended</div>
+	                            <div class="text-sm">Your session has been ended. All data has been cleaned up.</div>
+	                        </div>
+	                    </div>
+	                `;
+	                document.body.appendChild(notice);
+	                
+	                // Clean up and refresh
+	                setTimeout(() => {
+	                    if (notice.parentNode) {
+	                        notice.parentNode.removeChild(notice);
+	                    }
+	                    this.cleanup();
+	                    window.location.reload();
+	                }, 3000);
+	            }
+	        } catch (error) {
+	            console.error('Error ending session:', error);
+	        }
+	    }
+	},
     
     async validateCurrentSession() {
         if (!currentSessionId) return;
@@ -2034,36 +2063,58 @@ const SessionManager = {
         }, 5000);
     },
     
-    startSessionTimer(seconds) {
-        if (sessionTimerInterval) {
-            clearInterval(sessionTimerInterval);
-        }
-        
-        let remainingSeconds = seconds;
-        
-        const updateDisplay = () => {
-            const minutes = Math.floor(remainingSeconds / 60);
-            const secs = remainingSeconds % 60;
-            const timeString = `${minutes}:${secs.toString().padStart(2, '0')}`;
-            
-            // Update both timer displays
-            const sessionTimer = document.getElementById('sessionTimer');
-            const topTimer = document.getElementById('topTimerDisplay');
-            
-            if (sessionTimer) sessionTimer.textContent = timeString;
-            if (topTimer) topTimer.textContent = timeString;
-            
-            if (remainingSeconds <= 0) {
-                this.sessionExpired();
-                return;
-            }
-            
-            remainingSeconds--;
-        };
-        
-        updateDisplay(); // Initial update
-        sessionTimerInterval = setInterval(updateDisplay, 1000);
-    },
+	handleSessionExpired() {
+	    console.log('Session timer expired');
+	    
+	    // Show expired notice first
+	    this.showSessionExpiredNotice();
+	    
+	    // Then handle cleanup
+	    setTimeout(() => {
+	        this.cleanup();
+	        this.resetDemoState();
+	    }, 3000);
+	},
+	
+	startSessionTimer(durationInSeconds) {
+	    sessionEndTime = Date.now() + (durationInSeconds * 1000);
+	    window.sessionStartTime = Date.now();
+		sessionStorage.setItem('sessionEndTime', sessionEndTime);
+	    if (sessionTimerInterval) {
+	        clearInterval(sessionTimerInterval);
+	    }
+	    
+	    const updateTimer = () => {
+	        const remaining = Math.max(0, sessionEndTime - Date.now());
+	        const minutes = Math.floor(remaining / 60000);
+	        const seconds = Math.floor((remaining % 60000) / 1000);
+	        
+	        const display = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+	        
+	        // Update both timer displays
+	        const timerDisplay = document.getElementById('timerDisplay');
+	        const topTimerDisplay = document.getElementById('topTimerDisplay');
+	        
+	        if (timerDisplay) timerDisplay.textContent = display;
+	        if (topTimerDisplay) topTimerDisplay.textContent = display;
+	        
+	        // Check if expired
+	        if (remaining <= 0) {
+	            clearInterval(sessionTimerInterval);
+	            this.handleSessionExpired();
+	        }
+	        
+	        // Warning at 1 minute
+	        if (remaining <= 60000 && remaining > 59000) {
+	            this.showWarningNotice('Your session will expire in 1 minute!');
+	        }
+	    };
+	    
+	    updateTimer();
+	    sessionTimerInterval = setInterval(updateTimer, 1000);
+	    
+	    this.showSessionTimer();
+	},
     
     startWaitingTimer(seconds) {
         if (sessionTimerInterval) {
@@ -2300,11 +2351,34 @@ const SessionManager = {
             }
         }, 5000);
     },
-
+	
+	
+	
+	showWarningNotice(message) {
+	    const warning = document.createElement('div');
+	    warning.className = 'fixed top-20 right-4 bg-yellow-500 text-white rounded-lg shadow-lg p-4 z-50 animate-pulse';
+	    warning.innerHTML = `
+	        <div class="flex items-center space-x-2">
+	            <i class="fas fa-exclamation-triangle"></i>
+	            <span class="font-semibold">${message}</span>
+	        </div>
+	    `;
+	    document.body.appendChild(warning);
+	    
+	    setTimeout(() => {
+	        if (warning.parentNode) {
+	            warning.parentNode.removeChild(warning);
+	        }
+	    }, 5000);
+	},
+	
     refreshPage() {
         window.location.reload();
     }
 };
+
+
+
 
 // ========================================
 // TOKEN-BASED ACCESS FUNCTIONS
