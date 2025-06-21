@@ -360,13 +360,16 @@ public class HRController {
             if (!isValidFileType(contentType)) {
                 response.put("success", false);
                 response.put("error", "Only PDF is supported");
+                response.put("errorType", "validation");
                 return ResponseEntity.badRequest().body(response);
             }
 
-            // Check file size (additional validation)
-            if (file.getSize() > 10 * 1024 * 1024) { // 10MB limit
+            // Check file size - Updated to 5MB for Textract
+            if (file.getSize() > 5 * 1024 * 1024) { // 5MB limit for Textract
                 response.put("success", false);
-                response.put("error", "File size exceeds 10MB limit");
+                response.put("error", "File size exceeds 5MB limit");
+                response.put("details", "AWS Textract has a 5MB limit for synchronous processing. Please reduce your PDF file size.");
+                response.put("errorType", "validation");
                 return ResponseEntity.badRequest().body(response);
             }
 
@@ -412,7 +415,7 @@ public class HRController {
             
             return ResponseEntity.ok(response);
 
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             logger.error("Error uploading resume: {} for session: {}", file.getOriginalFilename(), sessionId, e);
             
             // Update status to failed
@@ -422,14 +425,60 @@ public class HRController {
                 status.setError(e.getMessage());
             }
             
+            String message = e.getMessage();
+            
+            // Parse specific error types and return 200 OK with error details
+            if (message != null && message.startsWith("DOCUMENT_FORMAT_ERROR:")) {
+                response.put("success", false);
+                response.put("error", "Document Format Issue");
+                response.put("details", message.substring(22)); // Remove prefix
+                response.put("errorType", "format");
+                response.put("trackingId", trackingId);
+                response.put("timestamp", LocalDateTime.now().toString());
+                // Return 200 OK with error details instead of 500
+                return ResponseEntity.ok(response);
+                
+            } else if (message != null && message.startsWith("PROCESSING_ERROR:")) {
+                response.put("success", false);
+                response.put("error", "Processing Error");
+                response.put("details", message.substring(17)); // Remove prefix
+                response.put("errorType", "processing");
+                response.put("trackingId", trackingId);
+                response.put("timestamp", LocalDateTime.now().toString());
+                // Return 200 OK with error details instead of 500
+                return ResponseEntity.ok(response);
+                
+            } else {
+                // Generic error response
+                response.put("success", false);
+                response.put("error", "Failed to process resume");
+                response.put("details", message != null ? message : "An error occurred while processing the file");
+                response.put("errorType", "general");
+                response.put("trackingId", trackingId);
+                response.put("timestamp", LocalDateTime.now().toString());
+                // Return 200 OK with error details instead of 500
+                return ResponseEntity.ok(response);
+            }
+            
+        } catch (Exception e) {
+            logger.error("Unexpected error uploading resume: {} for session: {}", file.getOriginalFilename(), sessionId, e);
+            
+            // Update status to failed
+            if (processingStatusMap.containsKey(trackingId)) {
+                ProcessingStatus status = processingStatusMap.get(trackingId);
+                status.setStatus("failed");
+                status.setError("Unexpected error occurred");
+            }
+            
             response.put("success", false);
-            response.put("error", "Failed to process resume: " + e.getMessage());
+            response.put("error", "Unexpected error");
+            response.put("details", "An unexpected error occurred. Please try again.");
+            response.put("errorType", "general");
             response.put("trackingId", trackingId);
             response.put("timestamp", LocalDateTime.now().toString());
-            return ResponseEntity.status(500).body(response);
+            return ResponseEntity.ok(response);
         }
     }
-
     @PostMapping("/api/upload/batch")
     @ResponseBody
     public ResponseEntity<Map<String, Object>> uploadMultipleResumes(
@@ -459,9 +508,9 @@ public class HRController {
                 if (!isValidFileType(file.getContentType())) {
                     fileResult.put("success", false);
                     fileResult.put("error", "Invalid file type");
-                } else if (file.getSize() > 10 * 1024 * 1024) {
+                } else if (file.getSize() > 5 * 1024 * 1024) { // 5MB limit for Textract
                     fileResult.put("success", false);
-                    fileResult.put("error", "File size exceeds 10MB limit");
+                    fileResult.put("error", "File size exceeds 5MB limit");
                 } else {
                     Candidate candidate = candidateService.processResume(file);
                     fileResult.put("success", true);
@@ -469,10 +518,36 @@ public class HRController {
                     fileResult.put("skillsExtracted", candidate.getTechnicalSkills() != null ? candidate.getTechnicalSkills().size() : 0);
                     successCount++;
                 }
+            } catch (RuntimeException e) {
+                String message = e.getMessage();
+                
+                // Parse specific error types
+                if (message != null && message.startsWith("DOCUMENT_FORMAT_ERROR:")) {
+                    fileResult.put("success", false);
+                    fileResult.put("error", "Document Format Issue");
+                    fileResult.put("details", message.substring(22)); // Remove prefix
+                    fileResult.put("errorType", "format");
+                    
+                } else if (message != null && message.startsWith("PROCESSING_ERROR:")) {
+                    fileResult.put("success", false);
+                    fileResult.put("error", "Processing Error");
+                    fileResult.put("details", message.substring(17)); // Remove prefix
+                    fileResult.put("errorType", "processing");
+                    
+                } else {
+                    fileResult.put("success", false);
+                    fileResult.put("error", "Upload failed");
+                    fileResult.put("details", "Please ensure the file is a valid PDF and try again.");
+                    fileResult.put("errorType", "general");
+                }
+                
+                logger.error("Error uploading resume: {} - {}", file.getOriginalFilename(), message);
             } catch (Exception e) {
                 fileResult.put("success", false);
-                fileResult.put("error", e.getMessage());
-                logger.error("Error processing file in batch: {} for session: {}", file.getOriginalFilename(), sessionId, e);
+                fileResult.put("error", "Unexpected error");
+                fileResult.put("details", "An unexpected error occurred. Please try again.");
+                fileResult.put("errorType", "general");
+                logger.error("Unexpected error processing file: {}", file.getOriginalFilename(), e);
             }
             
             results.add(fileResult);

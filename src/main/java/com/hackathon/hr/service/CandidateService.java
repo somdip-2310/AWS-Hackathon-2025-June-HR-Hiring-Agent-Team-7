@@ -3,6 +3,8 @@ package com.hackathon.hr.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hackathon.hr.exception.DocumentProcessingException;
+import com.hackathon.hr.exception.UnsupportedDocumentFormatException;
 import com.hackathon.hr.model.Candidate;
 import com.hackathon.hr.model.JobRequirement;
 import com.hackathon.hr.model.MatchResult;
@@ -13,6 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.PostConstruct;
+
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -159,12 +163,42 @@ public class CandidateService {
             logger.info("Processed candidate: {} with ID: {}", candidate.getFileName(), candidate.getId());
             return candidate;
 
+        } catch (UnsupportedDocumentFormatException e) {
+            logger.error("Unsupported document format: {}", e.getMessage());
+            if (trackingId != null) {
+                updateProcessingStatus(trackingId, "error", 0);
+            }
+            throw new RuntimeException("DOCUMENT_FORMAT_ERROR: " + e.getMessage(), e);
+            
+        } catch (DocumentProcessingException e) {
+            logger.error("Document processing error: {}", e.getMessage());
+            if (trackingId != null) {
+                updateProcessingStatus(trackingId, "error", 0);
+            }
+            throw new RuntimeException("PROCESSING_ERROR: " + e.getMessage(), e);
+            
         } catch (Exception e) {
             logger.error("Error processing resume: {}", file.getOriginalFilename(), e);
             if (trackingId != null) {
-                failProcessing(trackingId, e.getMessage());
+                updateProcessingStatus(trackingId, "error", 0);
             }
-            throw new RuntimeException("Failed to process resume: " + e.getMessage());
+            throw new RuntimeException("Failed to process resume: " + e.getMessage(), e);
+        }
+    }
+    
+    private boolean isValidPDF(MultipartFile file) {
+        try {
+            // Check PDF header
+            byte[] header = new byte[4];
+            file.getInputStream().read(header);
+            file.getInputStream().reset();
+            
+            // PDF files start with %PDF
+            return header[0] == 0x25 && header[1] == 0x50 && 
+                   header[2] == 0x44 && header[3] == 0x46;
+        } catch (IOException e) {
+            logger.error("Error validating PDF", e);
+            return false;
         }
     }
     

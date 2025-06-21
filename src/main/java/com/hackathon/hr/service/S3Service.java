@@ -37,7 +37,15 @@ public class S3Service {
     }
     
     public String uploadFile(MultipartFile file) throws IOException {
-        String key = "resumes/" + UUID.randomUUID() + "-" + file.getOriginalFilename();
+        
+    	if (file.getSize() > 5 * 1024 * 1024) { // 5MB limit for Textract sync operations
+            throw new IllegalArgumentException("File size exceeds 5MB limit for Textract processing");
+        }
+        
+        if (!"application/pdf".equals(file.getContentType())) {
+            throw new IllegalArgumentException("Only PDF files are supported");
+        }
+    	String key = "resumes/" + UUID.randomUUID() + "-" + file.getOriginalFilename();
         
         try {
             PutObjectRequest request = PutObjectRequest.builder()

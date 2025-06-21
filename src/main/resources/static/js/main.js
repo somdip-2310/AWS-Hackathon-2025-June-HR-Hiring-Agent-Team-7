@@ -368,11 +368,11 @@ function createFileProgressItem(fileName, fileId) {
 
 async function uploadFiles(files) {
     console.log('Starting upload of', files.length, 'files');
-	console.log('Starting upload of', files.length, 'files');
-	    
-	    // Immediately freeze upload functionality
-	    freezeUploadSection();
-	    uploadSessionActive = true;
+    
+    // Immediately freeze upload functionality
+    freezeUploadSection();
+    uploadSessionActive = true;
+    
     const progressSection = document.getElementById('uploadProgressSection');
     const fileProgressList = document.getElementById('fileProgressList');
     const resultsDiv = document.getElementById('uploadResults');
@@ -421,18 +421,65 @@ async function uploadFiles(files) {
             if (progressBar) progressBar.style.width = '60%';
             if (statusText) statusText.textContent = 'Extracting text and analyzing skills...';
 
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
+            // Always parse the JSON response
             const result = await response.json();
             console.log('Upload result for', file.name, ':', result);
-			// Track upload with GA
-			GATracking.trackResumeUpload(file.name, file.size, true);
-
-            // Check for success
+            
+            // Check if result indicates an error
+            if (!result.success) {
+                // Handle specific error types
+                if (result.errorType === 'format' && result.details) {
+                    // Format error with detailed instructions
+                    displayDetailedError(result, progressItem, file.name);
+                    GATracking.trackResumeUpload(file.name, file.size, false);
+                    continue; // Move to next file
+                } else if (result.errorType === 'processing' && result.details) {
+                    // Processing error with details
+                    displayDetailedError(result, progressItem, file.name);
+                    GATracking.trackResumeUpload(file.name, file.size, false);
+                    continue; // Move to next file
+                } else if (result.errorType === 'validation') {
+                    // Validation error (file size, type, etc.)
+                    if (progressBar) {
+                        progressBar.style.width = '100%';
+                        progressBar.classList.remove('from-purple-500', 'to-purple-700');
+                        progressBar.classList.add('bg-red-500');
+                    }
+                    if (statusText) {
+                        statusText.textContent = `❌ ${result.error}`;
+                        statusText.classList.remove('text-gray-600');
+                        statusText.classList.add('text-red-600', 'font-semibold');
+                    }
+                    if (statusIcon) {
+                        statusIcon.innerHTML = '<i class="fas fa-exclamation-circle text-red-500 text-lg"></i>';
+                    }
+                    if (progressItem) {
+                        progressItem.classList.add('border', 'border-red-200', 'bg-red-50');
+                    }
+                    
+                    // Add details if available
+                    if (result.details && progressItem) {
+                        const errorDiv = document.createElement('div');
+                        errorDiv.className = 'mt-2 text-sm text-red-600';
+                        errorDiv.textContent = result.details;
+                        progressItem.appendChild(errorDiv);
+                    }
+                    
+                    GATracking.trackResumeUpload(file.name, file.size, false);
+                    continue; // Move to next file
+                } else {
+                    // Generic error
+                    throw new Error(result.error || result.details || 'Upload failed');
+                }
+            }
+            
+            // Success case
             if (result.success && (result.candidateId || result.id)) {
                 successCount++;
+                
+                // Track successful upload
+                GATracking.trackResumeUpload(file.name, file.size, true);
+                
                 if (progressBar) progressBar.style.width = '100%';
                 
                 // Count skills from result
@@ -453,13 +500,13 @@ async function uploadFiles(files) {
                 // Mark step 1 as completed
                 const step1 = document.getElementById('step1');
                 if (step1) step1.classList.add('completed');
-                
-            } else {
-                throw new Error(result.error || 'Upload failed');
             }
 
         } catch (error) {
             console.error('Upload error for', file.name, ':', error);
+            
+            // Track failed upload
+            GATracking.trackResumeUpload(file.name, file.size, false);
             
             if (progressBar) {
                 progressBar.style.width = '100%';
@@ -483,10 +530,11 @@ async function uploadFiles(files) {
     // Show summary
     if (successCount > 0) {
         uploadedInSession = true;
-		hasUploadedInCurrentSession = true;
-		        
-		        // Keep upload section frozen
-		        maintainUploadFreeze();
+        hasUploadedInCurrentSession = true;
+        
+        // Keep upload section frozen
+        maintainUploadFreeze();
+        
         const summaryDiv = document.createElement('div');
         summaryDiv.className = 'mt-6 p-6 bg-gradient-to-r from-green-50 to-green-100 rounded-xl border-2 border-green-200 fade-in shadow-lg';
         summaryDiv.innerHTML = `
@@ -517,14 +565,85 @@ async function uploadFiles(files) {
         setTimeout(async () => {
             await loadCandidates();
             console.log('Candidates reloaded after upload');
-			// Auto-scroll to job selection section
-			            scrollToJobSelection();
+            // Auto-scroll to job selection section
+            scrollToJobSelection();
         }, 2000); // 2 second delay to ensure backend processing is complete
     }
     
     // Clear file input
     const resumeFiles = document.getElementById('resumeFiles');
     if (resumeFiles) resumeFiles.value = '';
+}
+
+function displayDetailedError(errorResult, progressItem, fileName) {
+    console.log('Displaying detailed error for', fileName, errorResult);
+    
+    // Update progress bar to show error
+    const progressBar = progressItem?.querySelector('.progress-bar');
+    if (progressBar) {
+        progressBar.style.width = '100%';
+        progressBar.classList.remove('from-purple-500', 'to-purple-700');
+        progressBar.classList.add('bg-red-500');
+    }
+    
+    // Update status text
+    const statusText = progressItem?.querySelector('.status-text');
+    if (statusText) {
+        statusText.textContent = `❌ ${errorResult.error}`;
+        statusText.classList.remove('text-gray-600');
+        statusText.classList.add('text-red-600', 'font-semibold');
+    }
+    
+    // Update status icon
+    const statusIcon = progressItem?.querySelector('.status-icon');
+    if (statusIcon) {
+        statusIcon.innerHTML = '<i class="fas fa-exclamation-circle text-red-500 text-lg"></i>';
+    }
+    
+    // Add border styling
+    if (progressItem) {
+        progressItem.classList.add('border', 'border-red-200', 'bg-red-50');
+    }
+    
+    // Create detailed error display
+    if (errorResult.details && progressItem) {
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'mt-3 bg-white rounded-lg p-4 text-sm border border-red-200';
+        
+        // Parse the details to create formatted HTML
+        const lines = errorResult.details.split('\n');
+        let html = '<div class="font-semibold text-red-800 mb-3"><i class="fas fa-info-circle mr-2"></i>How to fix this issue:</div>';
+        html += '<div class="space-y-2">';
+        
+        lines.forEach(line => {
+            if (line.trim()) {
+                if (line.match(/^\d\./)) {
+                    // Numbered list item
+                    html += '<div class="flex items-start">';
+                    html += '<span class="text-red-600 font-semibold mr-2">' + line.substring(0, 2) + '</span>';
+                    html += '<span class="text-gray-700">' + line.substring(2).trim() + '</span>';
+                    html += '</div>';
+                } else if (line.startsWith('•')) {
+                    // Bullet point
+                    html += '<div class="ml-4 text-gray-700">' + line + '</div>';
+                } else if (!line.includes('Please try one of these solutions')) {
+                    // Regular text (skip the "Please try" line as we have our own header)
+                    html += '<div class="text-gray-800 font-medium mb-2">' + line + '</div>';
+                }
+            }
+        });
+        
+        html += '</div>';
+        
+        // Add a retry hint
+        html += '<div class="mt-3 pt-3 border-t border-red-200 text-xs text-gray-600">';
+        html += '<i class="fas fa-lightbulb text-yellow-500 mr-1"></i>';
+        html += 'Fix your PDF using one of the methods above, then try uploading again.';
+        html += '</div>';
+        
+        errorDiv.innerHTML = html;
+        progressItem.appendChild(errorDiv);
+    }
 }
 
 // ========================================
@@ -2544,7 +2663,7 @@ function resetUploadState() {
             </button>
             <p class="text-sm text-gray-500 mt-3">
                 <i class="fas fa-info-circle mr-1"></i>
-                PDF files only (Max 10MB each) • Multiple files supported
+                PDF files only (Max 5MB each) • Multiple files supported
             </p>
         `;
     }
